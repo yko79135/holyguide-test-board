@@ -31,6 +31,17 @@
     return {id:id,name:id};
   }
   function sendOn(p){ return addDays(p.test_date, -lead()); }
+  function periodByN(n){
+    var list = (cfg && cfg.periods) || [];
+    for(var i=0;i<list.length;i++){ if(list[i].n === n) return list[i]; }
+    return null;
+  }
+  function whenText(p){
+    var per = periodByN(p.test_period);
+    if(per) return per.n+"교시 · "+per.start+"–"+per.end;
+    if(p.test_time) return p.test_time;
+    return "";
+  }
   function toast(m){
     toastMsg = m;
     if(toastTimer) clearTimeout(toastTimer);
@@ -117,7 +128,8 @@
     var cls = p.status === "approved" ? "approved" : p.status === "pending" ? "pending" : "declined";
     var h = '<div class="row '+cls+'"><div class="row-top">';
     h += '<span class="row-title">'+esc(p.subject)+' · '+esc(p.chapter)+'</span>';
-    h += '<span class="row-date">'+esc(fmtLong(p.test_date))+'</span>';
+    var when = whenText(p);
+    h += '<span class="row-date">'+esc(fmtLong(p.test_date))+(when ? ' · '+esc(when) : '')+'</span>';
     h += '<span class="row-who">'+(opts.showWho ? esc(s.name)+' — ' : '')+esc(p.course)+'</span>';
     h += '<span class="spacer"></span>'+pillFor(p)+'</div>';
     if(p.note) h += '<p class="row-note">“'+esc(p.note)+'”</p>';
@@ -128,6 +140,10 @@
       h += '<p class="hint">Sent: '+files.map(function(f){
         return f.link ? '<a href="'+esc(f.link)+'" target="_blank" rel="noopener">'+esc(f.name)+'</a>' : esc(f.name);
       }).join(" · ")+'</p>';
+    }
+    if(p.status === "approved" && cfg && cfg.calendar && !p.calendar_event_id
+       && data.me && data.me.role === "teacher"){
+      h += '<p class="hint warnish">This one did not make it onto your Google Calendar. Approving it again will retry.</p>';
     }
     if(p.status === "approved" && p.delivery_status === "missing"){
       h += '<p class="hint warnish">No study guide or practice test in Drive yet — Mr. Ko has been emailed.</p>';
@@ -141,7 +157,8 @@
     if(!up.length) return "";
     var p = up[0], s = studentById(p.student_id);
     return '<div class="nextup"><span class="big">'+esc(s.name)+' · '+esc(p.subject)+' '+esc(p.chapter)+'</span>'
-      + '<span class="meta">'+esc(fmtLong(p.test_date))+' · materials '
+      + '<span class="meta">'+esc(fmtLong(p.test_date))
+      + (whenText(p) ? ' · '+esc(whenText(p)) : '')+' · materials '
       + esc(p.sent_at ? "sent "+fmtDate(p.sent_at) : "go out "+fmtDate(sendOn(p)))+'</span>'
       + '<span class="days">'+esc(dayWord(diffDays(t,p.test_date)))+'</span></div>';
   }
@@ -166,13 +183,28 @@
       + '<input id="f-course" type="text" data-field="course" value="'+esc(course)+'" placeholder="e.g. Geometry (4th ed.)"></div>'
       + '<div><label for="f-chapter">Chapter</label>'
       + '<input id="f-chapter" type="text" data-field="chapter" value="'+esc(draft.chapter||"")+'" placeholder="e.g. Ch 8"></div></div>';
+    var slot = draft.slot == null ? "" : String(draft.slot);
+    var periods = (cfg && cfg.periods) || [];
     h += '<div class="f-row"><div><label for="f-date">Test date</label>'
       + '<input id="f-date" type="date" data-field="date" min="'+addDays(t,1)+'" value="'+esc(draft.date||"")+'">'
       + (draft.date ? '<p class="hint'+(early?" warnish":"")+'">'+(early
           ? 'That is less than '+(lead()+1)+' days away — your study guide would arrive late.'
           : 'Study guide + practice test would reach you '+esc(fmtDate(addDays(draft.date,-lead())))+'.')+'</p>' : '')
-      + '</div><div><label for="f-note">Anything Mr. Ko should know</label>'
-      + '<input id="f-note" type="text" data-field="note" value="'+esc(draft.note||"")+'" placeholder="Optional"></div></div>';
+      + '</div><div><label for="f-slot">Class period</label>'
+      + '<select id="f-slot" data-field="slot">'
+      + '<option value=""'+(slot===""?' selected':'')+'>Not sure yet</option>'
+      + periods.map(function(x){
+          return '<option value="'+x.n+'"'+(slot===String(x.n)?' selected':'')+'>'
+            + x.n+'교시 · '+x.start+'–'+x.end+'</option>';
+        }).join("")
+      + '<option value="other"'+(slot==="other"?' selected':'')+'>Other time…</option>'
+      + '</select>'
+      + (slot==="other"
+          ? '<input type="time" data-field="time" value="'+esc(draft.time||"")+'" style="margin-top:8px">'
+          : '<p class="hint">Mr. Ko puts approved tests straight onto his calendar, so a period helps.</p>')
+      + '</div></div>';
+    h += '<div><label for="f-note">Anything Mr. Ko should know</label>'
+      + '<input id="f-note" type="text" data-field="note" value="'+esc(draft.note||"")+'" placeholder="Optional"></div>';
     h += '<div class="actions"><button class="btn" data-act="propose"'+(busy?" disabled":"")+'>Send to Mr. Ko</button>'
       + '<span class="hint">He approves it before anything is scheduled.</span></div></div></section>';
 
@@ -243,6 +275,7 @@
     h += '</div></section>';
 
     h += '<section class="note"><b>What happens after you approve</b><ol>'
+      + '<li>The test goes onto your Google Calendar straight away.</li>'
       + '<li>Every morning a scheduled task reads this board and looks for approved tests '+lead()+' days out.</li>'
       + '<li>It looks in Drive for that chapter’s study guide, practice test and answer key.</li>'
       + '<li>If they exist, it emails them to the student — attached and linked — with you on CC, and marks the test <em>Materials sent</em> here.</li>'
@@ -307,8 +340,9 @@
   document.addEventListener("input", function(e){
     var f = e.target.getAttribute && e.target.getAttribute("data-field");
     if(!f) return;
-    if(f==="course"||f==="chapter"||f==="note") draft[f] = e.target.value;
+    if(f==="course"||f==="chapter"||f==="note"||f==="time") draft[f] = e.target.value;
     if(f==="date"){ draft.date = e.target.value; render(); }
+    if(f==="slot"){ draft.slot = e.target.value; if(draft.slot !== "other") draft.time = ""; render(); }
   });
 
   document.addEventListener("click", function(e){
@@ -330,10 +364,13 @@
         course: draft.course != null ? draft.course : val("course"),
         chapter: draft.chapter != null ? draft.chapter : val("chapter"),
         date: draft.date || val("date"),
-        note: draft.note != null ? draft.note : val("note")
+        note: draft.note != null ? draft.note : val("note"),
+        period: (draft.slot && draft.slot !== "other") ? Number(draft.slot) : null,
+        time: draft.slot === "other" ? (draft.time || val("time")) : ""
       };
       if(!String(payload.chapter).trim()) return toast("Which chapter is the test on?");
       if(!payload.date) return toast("Pick a test date first.");
+      if(draft.slot === "other" && !payload.time) return toast("Type the time, or pick a class period.");
       return api("/api/propose", payload).then(function(d){ if(d){ draft = {}; toast("Sent to Mr. Ko."); } });
     }
     if(act === "withdraw") return api("/api/withdraw", {id:id}).then(function(d){ if(d) toast("Withdrawn."); });
