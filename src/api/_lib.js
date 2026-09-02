@@ -7,7 +7,33 @@ export const CONFIG = {
     process.env.GOOGLE_CLIENT_ID ||
     '1075055122385-au7hh0hhloisa59d3hmcp8q1fsuberii.apps.googleusercontent.com',
   teacherEmail: (process.env.TEACHER_EMAIL || 'yko79135@gmail.com').toLowerCase(),
+  timeZone: 'Asia/Seoul',
+  appUrl: process.env.APP_URL || 'https://holyguide-test-board.vercel.app',
+
+  // Google Calendar, via a service account that the target calendar has
+  // been shared with. Absent => approvals simply skip the calendar.
+  saEmail: process.env.GOOGLE_SA_EMAIL || '',
+  saKey: (process.env.GOOGLE_SA_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  calendarId: process.env.CALENDAR_ID || '',
+
+  // Email, via Resend. Absent => proposals simply do not notify.
+  resendKey: process.env.RESEND_API_KEY || '',
+  notifyFrom: process.env.NOTIFY_FROM || 'Test Date Board <onboarding@resend.dev>',
+  notifyEmail: (process.env.NOTIFY_EMAIL || process.env.TEACHER_EMAIL || 'yko79135@gmail.com').toLowerCase(),
 };
+
+// The school day. Shared by the server (event length) and the client
+// (the picker), so the two can never drift apart.
+export const PERIODS = [
+  { n: 1, start: '09:00', end: '09:40' },
+  { n: 2, start: '09:45', end: '10:25' },
+  { n: 3, start: '10:30', end: '11:10' },
+  { n: 4, start: '11:15', end: '11:55' },
+  { n: 5, start: '13:05', end: '13:45' },
+  { n: 6, start: '13:50', end: '14:30' },
+  { n: 7, start: '14:35', end: '15:15' },
+  { n: 8, start: '15:20', end: '16:00' },
+];
 
 export const sql = neon(CONFIG.databaseUrl);
 
@@ -87,7 +113,9 @@ export async function loadBoard() {
     from students order by sort_order, name`;
   const proposals = await sql`
     select id, student_id, subject, course, chapter,
-           to_char(test_date,'YYYY-MM-DD') as test_date, note, status, teacher_note,
+           to_char(test_date,'YYYY-MM-DD') as test_date,
+           test_period, to_char(test_time,'HH24:MI') as test_time, calendar_event_id,
+           note, status, teacher_note,
            created_at, decided_at, delivery_status,
            to_char(sent_at,'YYYY-MM-DD') as sent_at, files,
            to_char(last_check,'YYYY-MM-DD') as last_check
