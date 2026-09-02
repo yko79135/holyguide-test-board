@@ -100,9 +100,9 @@ button,input,select,textarea{font:inherit;color:inherit;}
 .f-row{display:grid;gap:14px;grid-template-columns:1fr 1fr;}
 @media (max-width:620px){.f-row{grid-template-columns:1fr;}}
 label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:5px;}
-input[type=text],input[type=date],input[type=email],select,textarea{
+input[type=text],input[type=date],input[type=time],input[type=email],select,textarea{
   width:100%;padding:9px 11px;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;font-size:14px;}
-input[type=date]{font-family:"IBM Plex Mono",monospace;}
+input[type=date],input[type=time]{font-family:"IBM Plex Mono",monospace;}
 .seg{display:flex;gap:8px;}
 .seg button{flex:1;padding:9px 10px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);
   cursor:pointer;font-size:13.5px;font-weight:600;color:var(--muted);}
