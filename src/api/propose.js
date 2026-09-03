@@ -1,5 +1,6 @@
 import { authenticate, sql, loadBoard, send, fail, body, seoulToday, PERIODS, CONFIG } from './_lib.js';
 import { emailTeacher, whenLabel } from './_integrations.js';
+import { autoApproveEnabled, leadDays, holdReasons, approveProposal, autoApprovedEmail } from './_approve.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' });
@@ -14,10 +15,11 @@ export default async function handler(req, res) {
     const course = String(b.course || '').trim().slice(0, 120);
     const note = String(b.note || '').trim().slice(0, 400);
     const date = String(b.date || '').trim();
+    const today = seoulToday();
 
     if (!chapter) return send(res, 400, { error: 'Say which chapter the test is on.' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return send(res, 400, { error: 'Pick a test date.' });
-    if (date <= seoulToday()) return send(res, 400, { error: 'Pick a date in the future.' });
+    if (date <= today) return send(res, 400, { error: 'Pick a date in the future.' });
 
     // Either a school period, or a free time, or neither. A period wins
     // and fixes the time, so the two can never disagree on the row.
@@ -37,9 +39,9 @@ export default async function handler(req, res) {
 
     const dupe = await sql`
       select id from proposals
-      where student_id = ${me.studentId} and subject = ${subject}
-        and lower(chapter) = lower(${chapter}) and status in ('pending','approved')
-      limit 1`;
+       where student_id = ${me.studentId} and subject = ${subject}
+         and lower(chapter) = lower(${chapter}) and status in ('pending','approved')
+       limit 1`;
     if (dupe.length) {
       return send(res, 409, { error: 'You already have a ' + subject + ' ' + chapter + ' date on the board.' });
     }
@@ -50,22 +52,58 @@ export default async function handler(req, res) {
       values (${id}, ${me.studentId}, ${subject}, ${course}, ${chapter}, ${date},
               ${period}, ${time || null}, ${note})`;
 
-    await emailTeacher(
-      me.studentName + ' proposed a ' + subject + ' test — ' + chapter,
-      [
-        me.studentName + ' has asked for a test date and it is waiting for your approval.',
-        '',
-        'Subject:  ' + subject + (course ? ' (' + course + ')' : ''),
-        'Chapter:  ' + chapter,
-        'When:     ' + whenLabel({ test_date: date, test_period: period, test_time: time }),
-        note ? 'Their note: ' + note : '',
-        '',
-        'Approve or decline: ' + CONFIG.appUrl,
-      ]
-    );
+    /* Auto-approval. The row is already in Postgres and is the source of
+       truth; everything below is best-effort on top of it, so a failure
+       here must not lose the student's proposal. */
+    let approved = false;
+    try {
+      if (await autoApproveEnabled()) {
+        const lead = await leadDays();
+        const reasons = await holdReasons(
+          { id, student_id: me.studentId, test_date: date }, today, lead
+        );
+        if (!reasons.length) {
+          const { row, eventId } = await approveProposal(id, null);
+          approved = true;
+          const mail = autoApprovedEmail(row, eventId);
+          await emailTeacher(mail.subject, mail.lines);
+        } else {
+          await emailTeacher(
+            me.studentName + ' proposed a ' + subject + ' test — ' + chapter,
+            [
+              me.studentName + ' has asked for a test date and it is waiting for your approval.',
+              'The board did not approve it automatically because ' + reasons.join('; ') + '.',
+              '',
+              'Subject: ' + subject + (course ? ' (' + course + ')' : ''),
+              'Chapter: ' + chapter,
+              'When: ' + whenLabel({ test_date: date, test_period: period, test_time: time }),
+              note ? 'Their note: ' + note : '',
+              '',
+              'Approve or decline: ' + CONFIG.appUrl,
+            ]
+          );
+        }
+      } else {
+        await emailTeacher(
+          me.studentName + ' proposed a ' + subject + ' test — ' + chapter,
+          [
+            me.studentName + ' has asked for a test date and it is waiting for your approval.',
+            '',
+            'Subject: ' + subject + (course ? ' (' + course + ')' : ''),
+            'Chapter: ' + chapter,
+            'When: ' + whenLabel({ test_date: date, test_period: period, test_time: time }),
+            note ? 'Their note: ' + note : '',
+            '',
+            'Approve or decline: ' + CONFIG.appUrl,
+          ]
+        );
+      }
+    } catch (err) {
+      console.error('[auto-approve] ' + id + ':', err.message);
+    }
 
     const board = await loadBoard();
-    send(res, 200, { me, today: seoulToday(), ...board });
+    send(res, 200, { me, today, autoApproved: approved, ...board });
   } catch (err) {
     fail(res, err);
   }
