@@ -33,6 +33,15 @@ export default async function handler(req, res) {
     } catch (err) {
       out.saKeyParses = false;
       out.saKeyCode = err.code || err.name || 'Error';
+      /* Shape only, never key material: the BEGIN/END markers are public
+         constants, and a length plus a newline count is what separates a
+         truncated paste from a whole JSON object pasted by mistake. */
+      out.saKeyShape = {
+        length: CONFIG.saKey.length,
+        head: CONFIG.saKey.slice(0, 28),
+        tail: CONFIG.saKey.trim().slice(-26),
+        newlines: (CONFIG.saKey.match(/\n/g) || []).length,
+      };
     }
   }
 
