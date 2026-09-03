@@ -1,5 +1,30 @@
 import { neon } from '@neondatabase/serverless';
 
+/* A service-account PEM reaches this process through a form field, and
+   that field mangles it in three reliable ways: the value arrives still
+   wrapped in the quotes it was copied with, its newlines arrive as the
+   two characters \n, or they are lost entirely and the whole key becomes
+   one line. All three make node:crypto throw
+   'error:1E08010C:DECODER routines::unsupported' — which surfaces as a
+   calendar event that silently never appears. Normalising here is kinder
+   than asking a person to paste 1,700 characters perfectly. */
+function normalizePem(raw) {
+  let k = String(raw || '').trim();
+  if (!k) return '';
+  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) {
+    k = k.slice(1, -1);
+  }
+  k = k.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
+  if (!k.includes('\n')) {
+    const m = k.match(/^-----BEGIN ([A-Z ]+)-----\s*([\s\S]*?)\s*-----END \1-----$/);
+    if (m) {
+      const body = m[2].replace(/\s+/g, '').match(/.{1,64}/g) || [];
+      k = '-----BEGIN ' + m[1] + '-----\n' + body.join('\n') + '\n-----END ' + m[1] + '-----';
+    }
+  }
+  return k.endsWith('\n') ? k : k + '\n';
+}
+
 export const CONFIG = {
   databaseUrl:
     process.env.DATABASE_URL,
@@ -13,7 +38,7 @@ export const CONFIG = {
   // Google Calendar, via a service account that the target calendar has
   // been shared with. Absent => approvals simply skip the calendar.
   saEmail: process.env.GOOGLE_SA_EMAIL || '',
-  saKey: (process.env.GOOGLE_SA_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  saKey: normalizePem(process.env.GOOGLE_SA_PRIVATE_KEY),
   calendarId: process.env.CALENDAR_ID || '',
 
   // Email, via Resend. Absent => proposals simply do not notify.
