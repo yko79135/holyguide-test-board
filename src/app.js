@@ -93,7 +93,12 @@
       gsiReady = true;
     }
     window.google.accounts.id.renderButton(el, { theme:"outline", size:"large", shape:"pill", text:"signin_with", width:280 });
-    window.google.accounts.id.prompt();
+    /* One Tap is deliberately NOT prompted here. Under Chrome’s FedCM both
+       One Tap and the rendered button go through navigator.credentials.get(),
+       and only one such request may be outstanding — One Tap won the race and
+       every click on the button was silently swallowed. The button alone is
+       the sign-in path now. */
+    // window.google.accounts.id.prompt();
   }
   function signOut(){
     token = null; data = null; authError = ""; gsiReady = false;
