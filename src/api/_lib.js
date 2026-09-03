@@ -15,14 +15,26 @@ function normalizePem(raw) {
     k = k.slice(1, -1);
   }
   k = k.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
-  if (!k.includes('\n')) {
-    const m = k.match(/^-----BEGIN ([A-Z ]+)-----\s*([\s\S]*?)\s*-----END \1-----$/);
-    if (m) {
-      const body = m[2].replace(/\s+/g, '').match(/.{1,64}/g) || [];
-      k = '-----BEGIN ' + m[1] + '-----\n' + body.join('\n') + '\n-----END ' + m[1] + '-----';
-    }
+
+  /* The armour is the part people lose. In the JSON key file the value is
+     easy to select from MII… onward, leaving the BEGIN/END lines behind —
+     what remains is a perfectly good PKCS#8 body that OpenSSL will not
+     look at, and the only symptom is a calendar event that never appears.
+     Re-wrap whatever we were given; hand back anything unrecognisable
+     untouched so a real error still surfaces as itself. */
+  let label = 'PRIVATE KEY';
+  let body = k;
+  const m = k.match(/^-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----$/);
+  if (m) {
+    label = m[1];
+    body = m[2];
+  } else if (!/^[A-Za-z0-9+/=\s]+$/.test(k)) {
+    return k;
   }
-  return k.endsWith('\n') ? k : k + '\n';
+
+  body = body.replace(/\s+/g, '');
+  const wrapped = (body.match(/.{1,64}/g) || []).join('\n');
+  return '-----BEGIN ' + label + '-----\n' + wrapped + '\n-----END ' + label + '-----\n';
 }
 
 export const CONFIG = {
