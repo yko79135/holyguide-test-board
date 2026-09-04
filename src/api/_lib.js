@@ -54,6 +54,13 @@ export const CONFIG = {
   calendarId: process.env.CALENDAR_ID || '',
 
   // Email, via Resend. Absent => proposals simply do not notify.
+  // Gmail, via an app password. Present => the board sends as Mr. Ko
+  // himself and can write to students without a verified domain. Google
+  // shows an app password in four spaced groups; people paste it that way,
+  // and SMTP rejects the spaces, so drop them here rather than blame them.
+  gmailUser: (process.env.GMAIL_USER || process.env.TEACHER_EMAIL || 'yko79135@gmail.com').toLowerCase(),
+  gmailAppPassword: (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, ''),
+
   resendKey: process.env.RESEND_API_KEY || '',
   notifyFrom: process.env.NOTIFY_FROM || 'Test Date Board <onboarding@resend.dev>',
   notifyEmail: (process.env.NOTIFY_EMAIL || process.env.TEACHER_EMAIL || 'yko79135@gmail.com').toLowerCase(),
