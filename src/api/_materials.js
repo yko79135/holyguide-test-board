@@ -35,18 +35,13 @@ export function materialKey(chapter, kind, course) {
   return ch ? ch + slug(kind) + slug(course) : '';
 }
 
-/* Everything Drive will show us for this chapter. Exposed on its own so a
-   dry run can report what the service account can actually see — the
-   difference between "the file is not there" and "we cannot see it" is the
-   whole diagnosis, and from the outside they look identical. */
-export async function listChapterFiles(chapter) {
-  const ch = chapterKey(chapter);
-  if (!ch) return [];
+const MATERIALS_ROOT =
+  process.env.MATERIALS_FOLDER_ID || '1CodcVoCA6slGkxFf06UHU5C13PZwXVw4';
 
-  const token = await googleAccessToken(DRIVE_SCOPE);
+async function driveList(q, token) {
   const params = new URLSearchParams({
-    q: "trashed = false and name contains '" + ch + "'",
-    fields: 'files(id,name,mimeType,size)',
+    q,
+    fields: 'files(id,name,mimeType)',
     pageSize: '200',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
@@ -57,8 +52,40 @@ export async function listChapterFiles(chapter) {
   if (!r.ok) {
     throw new Error('drive list ' + r.status + ': ' + (await r.text()).slice(0, 200));
   }
-  const j = await r.json();
-  return j.files || [];
+  return (await r.json()).files || [];
+}
+
+/* Everything under the materials folder.
+ *
+ * A global `name contains` search would be one call instead of a dozen, and
+ * it returns nothing: a service account's search corpus does not reliably
+ * include files it can only reach through a folder shared with it. The Ch01
+ * guide is readable by id and invisible to search, which looks exactly like
+ * the file not existing. Walking down from the shared root uses only access
+ * we know we have. Three levels covers
+ * BJU TROVE AGENT / Study Guides / <class> / <file>.
+ *
+ * Exposed on its own so a dry run can report what the service account can
+ * actually see — "not there" and "cannot see it" are otherwise identical
+ * from the outside. */
+export async function listChapterFiles(chapter) {
+  if (!chapterKey(chapter)) return [];
+  const token = await googleAccessToken(DRIVE_SCOPE);
+
+  const files = [];
+  let frontier = [MATERIALS_ROOT];
+  for (let depth = 0; depth < 3 && frontier.length; depth++) {
+    const next = [];
+    for (const id of frontier) {
+      const children = await driveList("trashed = false and '" + id + "' in parents", token);
+      for (const f of children) {
+        if (f.mimeType === 'application/vnd.google-apps.folder') next.push(f.id);
+        else files.push(f);
+      }
+    }
+    frontier = next;
+  }
+  return files;
 }
 
 /* The exact file, or null. Deliberately exact: a near miss here means a
