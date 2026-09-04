@@ -17,7 +17,7 @@ export function calendarConfigured() {
   return Boolean(CONFIG.saEmail && CONFIG.saKey && CONFIG.calendarId);
 }
 export function emailConfigured() {
-  return Boolean(CONFIG.resendKey && CONFIG.notifyEmail);
+  return mailer() !== null;
 }
 
 /* Service-account JWT -> OAuth access token. No googleapis dependency:
@@ -149,45 +149,64 @@ export async function deleteCalendarEvent(eventId) {
   }
 }
 
-export async function emailTeacher(subject, lines) {
-  if (!emailConfigured()) return;
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer ' + CONFIG.resendKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: CONFIG.notifyFrom,
-        to: [CONFIG.notifyEmail],
-        subject,
-        text: lines.filter(Boolean).join('\n'),
-      }),
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      throw new Error(j.message || 'resend returned ' + r.status);
-    }
-  } catch (err) {
-    console.error('[email] could not send "' + subject + '":', err.message);
-  }
+/* Which sender is live.
+ *
+ * Gmail wins whenever an app password is present: it can write to students
+ * without anyone owning a domain, and it arrives from the address they
+ * already recognise, so replies land in Mr. Ko's normal inbox. Resend is the
+ * fallback, and on its shared sender it will only deliver to the account
+ * owner — which is why deliver.js routes through him until NOTIFY_FROM names
+ * a verified domain. */
+export function mailer() {
+  if (CONFIG.gmailUser && CONFIG.gmailAppPassword) return 'gmail';
+  if (CONFIG.resendKey && CONFIG.notifyEmail) return 'resend';
+  return null;
 }
 
-/* One send, with attachments. Resend wants base64 content and caps the
-   whole message at 40 MB; a study guide is a few hundred kilobytes, so the
-   cap is never the constraint — the verified sending domain is. Unlike
-   emailTeacher this reports whether Resend actually accepted the message,
-   because the caller marks a test as delivered on the strength of it, and
-   a row that says 'sent' when nothing was sent is worse than no row. */
+export async function emailTeacher(subject, lines) {
+  return sendEmail({ to: CONFIG.notifyEmail, subject, lines });
+}
+
+/* One send, whichever sender is configured, with attachments.
+ *
+ * Returns whether the message was actually accepted, because callers mark a
+ * test as delivered on the strength of it and a row that says 'sent' when
+ * nothing was sent is worse than no row at all. nodemailer is imported here
+ * rather than at the top so a bad install cannot take the whole board down
+ * with it — only sending would fail, and it would say so. */
 export async function sendEmail({ to, cc, subject, lines, attachments }) {
-  if (!emailConfigured() || !to) return false;
+  const via = mailer();
+  if (!via || !to) return false;
+  const text = (lines || []).filter(Boolean).join('\n');
+
   try {
+    if (via === 'gmail') {
+      const { default: nodemailer } = await import('nodemailer');
+      const transport = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user: CONFIG.gmailUser, pass: CONFIG.gmailAppPassword },
+      });
+      await transport.sendMail({
+        from: 'Test Date Board <' + CONFIG.gmailUser + '>',
+        to: Array.isArray(to) ? to.join(', ') : to,
+        cc: cc && cc.length ? (Array.isArray(cc) ? cc.join(', ') : cc) : undefined,
+        subject,
+        text,
+        attachments: (attachments || []).map((a) => ({
+          filename: a.filename,
+          content: a.content,
+        })),
+      });
+      return true;
+    }
+
     const payload = {
       from: CONFIG.notifyFrom,
       to: Array.isArray(to) ? to : [to],
       subject,
-      text: (lines || []).filter(Boolean).join('\n'),
+      text,
     };
     if (cc && cc.length) payload.cc = Array.isArray(cc) ? cc : [cc];
     if (attachments && attachments.length) {
@@ -210,7 +229,7 @@ export async function sendEmail({ to, cc, subject, lines, attachments }) {
     }
     return true;
   } catch (err) {
-    console.error('[email] could not send "' + subject + '":', err.message);
+    console.error('[email/' + via + '] could not send "' + subject + '":', err.message);
     return false;
   }
 }
