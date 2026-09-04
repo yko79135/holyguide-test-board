@@ -45,6 +45,11 @@ export default async function handler(req, res) {
     const dryRun = 'dry' in (req.query || {});
     const today = seoulToday();
     const lead = await leadDays();
+    /* Resend’s shared sender only delivers to the account owner. Until
+       NOTIFY_FROM names a verified domain, the material comes to Mr. Ko to
+       forward: same finding, same attachment, one hop more. Setting
+       NOTIFY_FROM flips this over on its own. */
+    const toStudents = Boolean(process.env.NOTIFY_FROM);
 
     /* The end of the window, computed here rather than in SQL. Passing the
        day count as a bind parameter makes Postgres see date + unknown, which
@@ -57,6 +62,7 @@ export default async function handler(req, res) {
     const out = {
       today, leadDays: lead, via: who.via, dryRun,
       emailConfigured: emailConfigured(),
+      deliversToStudents: toStudents,
       sent: [], missing: [], failed: [],
     };
 
@@ -135,20 +141,39 @@ export default async function handler(req, res) {
 
       try {
         const attachment = await fetchMaterial(file);
-        const ok = await sendEmail({
-          to: row.student_email,
-          cc: [CONFIG.notifyEmail],
-          subject: row.subject + ' ' + row.chapter + ' test — your ' + kind.toLowerCase(),
-          lines: [
-            row.student_name + ',',
-            '',
-            'Your ' + row.subject + ' ' + row.chapter + ' test is on ' + whenLabel(row) + '.',
-            'Your ' + kind.toLowerCase() + ' is attached.',
-            '',
-            'Mr. Ko',
-          ],
-          attachments: [attachment],
-        });
+        const ok = await sendEmail(
+          toStudents
+            ? {
+                to: row.student_email,
+                cc: [CONFIG.notifyEmail],
+                subject: row.subject + ' ' + row.chapter + ' test — your ' + kind.toLowerCase(),
+                lines: [
+                  row.student_name + ',',
+                  '',
+                  'Your ' + row.subject + ' ' + row.chapter + ' test is on ' + whenLabel(row) + '.',
+                  'Your ' + kind.toLowerCase() + ' is attached.',
+                  '',
+                  'Mr. Ko',
+                ],
+                attachments: [attachment],
+              }
+            : {
+                to: CONFIG.notifyEmail,
+                subject: 'Forward to ' + row.student_name + ': ' + row.subject + ' ' +
+                         row.chapter + ' ' + kind.toLowerCase(),
+                lines: [
+                  row.student_name + '’s ' + row.subject + ' ' + row.chapter +
+                    ' test is on ' + whenLabel(row) + '.',
+                  'Their ' + kind.toLowerCase() + ' is attached — forward it to ' +
+                    row.student_email + '.',
+                  '',
+                  'This comes to you rather than to them because no verified sending',
+                  'domain is set yet. Set NOTIFY_FROM on one and the board will write',
+                  'to students directly.',
+                ],
+                attachments: [attachment],
+              }
+        );
 
         if (!ok) {
           out.failed.push({
