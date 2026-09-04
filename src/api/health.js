@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { sql, send, CONFIG } from './_lib.js';
+import { mailer } from './_integrations.js';
 
 /* An unauthenticated liveness probe.
  *
@@ -15,7 +16,8 @@ export default async function handler(req, res) {
   const out = {
     databaseUrlSet: Boolean(CONFIG.databaseUrl),
     calendar: Boolean(CONFIG.saEmail && CONFIG.saKey && CONFIG.calendarId),
-    email: Boolean(CONFIG.resendKey),
+    email: mailer() !== null,
+    sender: mailer() || 'none',
   };
 
   try {
