@@ -45,6 +45,15 @@ export default async function handler(req, res) {
     const dryRun = 'dry' in (req.query || {});
     const today = seoulToday();
     const lead = await leadDays();
+
+    /* The end of the window, computed here rather than in SQL. Passing the
+       day count as a bind parameter makes Postgres see date + unknown, which
+       is ambiguous and throws — and it throws only once a row is in range,
+       which is exactly when you least want to find out. */
+    const until = (() => {
+      const [y, mo, d] = today.split('-').map(Number);
+      return new Date(Date.UTC(y, mo - 1, d + lead)).toISOString().slice(0, 10);
+    })();
     const out = {
       today, leadDays: lead, via: who.via, dryRun,
       emailConfigured: emailConfigured(),
@@ -62,7 +71,7 @@ export default async function handler(req, res) {
        where p.status = 'approved'
          and p.delivery_status <> 'sent'
          and p.test_date >= ${today}::date
-         and p.test_date <= ${today}::date + ${lead}
+         and p.test_date <= ${until}::date
        order by p.test_date`;
 
     for (const row of rows) {
