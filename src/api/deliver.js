@@ -1,7 +1,7 @@
 import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
 import { sendEmail, whenLabel, emailConfigured } from './_integrations.js';
 import { leadDays } from './_approve.js';
-import { materialKind, findMaterial, fetchMaterial } from './_materials.js';
+import { materialKind, findMaterial, fetchMaterial, listChapterFiles } from './_materials.js';
 
 /* ------------------------------------------------------------------ *
  * The morning run.
@@ -90,7 +90,17 @@ export default async function handler(req, res) {
       }
 
       if (!file) {
-        out.missing.push({ id: row.id, student: row.student_name, wanted });
+        const entry = { id: row.id, student: row.student_name, wanted };
+        /* On a dry run, say what Drive actually handed back. "Not there" and
+           "we cannot see it" look identical from here otherwise. */
+        if (dryRun) {
+          try {
+            entry.saw = (await listChapterFiles(row.chapter)).map((f) => f.name).slice(0, 20);
+          } catch (err) {
+            entry.saw = 'lookup failed: ' + err.message;
+          }
+        }
+        out.missing.push(entry);
         if (!dryRun) {
           const firstLookToday = row.last_check !== today;
           await sql`update proposals set last_check = ${today}::date where id = ${row.id}`;
