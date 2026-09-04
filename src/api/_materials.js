@@ -35,13 +35,13 @@ export function materialKey(chapter, kind, course) {
   return ch ? ch + slug(kind) + slug(course) : '';
 }
 
-/* The exact file, or null. Deliberately exact: a near miss here means a
-   student revises the wrong chapter, which is worse than being told the
-   file is missing. */
-export async function findMaterial({ chapter, kind, course }) {
-  const want = materialKey(chapter, kind, course);
+/* Everything Drive will show us for this chapter. Exposed on its own so a
+   dry run can report what the service account can actually see — the
+   difference between "the file is not there" and "we cannot see it" is the
+   whole diagnosis, and from the outside they look identical. */
+export async function listChapterFiles(chapter) {
   const ch = chapterKey(chapter);
-  if (!want || !ch) return null;
+  if (!ch) return [];
 
   const token = await googleAccessToken(DRIVE_SCOPE);
   const params = new URLSearchParams({
@@ -58,7 +58,17 @@ export async function findMaterial({ chapter, kind, course }) {
     throw new Error('drive list ' + r.status + ': ' + (await r.text()).slice(0, 200));
   }
   const j = await r.json();
-  return (j.files || []).find((f) => slug(stripExtension(f.name)) === want) || null;
+  return j.files || [];
+}
+
+/* The exact file, or null. Deliberately exact: a near miss here means a
+   student revises the wrong chapter, which is worse than being told the
+   file is missing. */
+export async function findMaterial({ chapter, kind, course }) {
+  const want = materialKey(chapter, kind, course);
+  if (!want) return null;
+  const files = await listChapterFiles(chapter);
+  return files.find((f) => slug(stripExtension(f.name)) === want) || null;
 }
 
 /* Google Docs have no bytes of their own, so they are exported as PDF;
