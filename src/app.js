@@ -282,9 +282,9 @@
     h += '<section class="note"><b>What happens after you approve</b><ol>'
       + '<li>The test goes onto your Google Calendar straight away.</li>'
       + '<li>Every morning a scheduled task reads this board and looks for approved tests '+lead()+' days out.</li>'
-      + '<li>It looks in Drive for that chapter’s study guide, practice test and answer key.</li>'
-      + '<li>If they exist, it emails them to the student — attached and linked — with you on CC, and marks the test <em>Materials sent</em> here.</li>'
-      + '<li>If they don’t exist yet, it emails you instead and keeps checking each day.</li>'
+      + '<li>It looks in Drive for that chapter’s study guide (science) or practice test (math).</li>'
+      + '<li>If it exists, it emails the file to the student — attached — with you on CC, and marks the test <em>Materials sent</em> here.</li>'
+      + '<li>If it doesn’t exist yet, it emails you instead and keeps checking each morning.</li>'
       + '</ol></section>';
 
     if(past.length){
