@@ -23,12 +23,12 @@ export function emailConfigured() {
 /* Service-account JWT -> OAuth access token. No googleapis dependency:
    that library is tens of megabytes for what is one signature and one
    POST, and cold starts on a hobby plan are already the slow part. */
-async function accessToken() {
+export async function googleAccessToken(scope = 'https://www.googleapis.com/auth/calendar.events') {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claim = b64url(JSON.stringify({
     iss: CONFIG.saEmail,
-    scope: 'https://www.googleapis.com/auth/calendar.events',
+    scope,
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600,
@@ -98,7 +98,7 @@ export function whenLabel(p) {
 export async function createCalendarEvent(p, studentName) {
   if (!calendarConfigured()) return null;
   try {
-    const token = await accessToken();
+    const token = await googleAccessToken();
     const body = {
       summary: studentName + ' — ' + p.subject + ' ' + p.chapter + ' test',
       description: [
@@ -134,7 +134,7 @@ export async function createCalendarEvent(p, studentName) {
 export async function deleteCalendarEvent(eventId) {
   if (!eventId || !calendarConfigured()) return;
   try {
-    const token = await accessToken();
+    const token = await googleAccessToken();
     const r = await fetch(
       'https://www.googleapis.com/calendar/v3/calendars/' +
         encodeURIComponent(CONFIG.calendarId) + '/events/' + encodeURIComponent(eventId),
@@ -171,5 +171,46 @@ export async function emailTeacher(subject, lines) {
     }
   } catch (err) {
     console.error('[email] could not send "' + subject + '":', err.message);
+  }
+}
+
+/* One send, with attachments. Resend wants base64 content and caps the
+   whole message at 40 MB; a study guide is a few hundred kilobytes, so the
+   cap is never the constraint — the verified sending domain is. Unlike
+   emailTeacher this reports whether Resend actually accepted the message,
+   because the caller marks a test as delivered on the strength of it, and
+   a row that says 'sent' when nothing was sent is worse than no row. */
+export async function sendEmail({ to, cc, subject, lines, attachments }) {
+  if (!emailConfigured() || !to) return false;
+  try {
+    const payload = {
+      from: CONFIG.notifyFrom,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      text: (lines || []).filter(Boolean).join('\n'),
+    };
+    if (cc && cc.length) payload.cc = Array.isArray(cc) ? cc : [cc];
+    if (attachments && attachments.length) {
+      payload.attachments = attachments.map((a) => ({
+        filename: a.filename,
+        content: Buffer.from(a.content).toString('base64'),
+      }));
+    }
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + CONFIG.resendKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.message || 'resend returned ' + r.status);
+    }
+    return true;
+  } catch (err) {
+    console.error('[email] could not send "' + subject + '":', err.message);
+    return false;
   }
 }
