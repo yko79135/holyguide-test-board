@@ -1,5 +1,5 @@
 import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
-import { sendEmail, whenLabel, emailConfigured } from './_integrations.js';
+import { sendEmail, whenLabel, emailConfigured, mailer } from './_integrations.js';
 import { leadDays } from './_approve.js';
 import { materialKind, findMaterial, fetchMaterial, listChapterFiles } from './_materials.js';
 
@@ -45,11 +45,11 @@ export default async function handler(req, res) {
     const dryRun = 'dry' in (req.query || {});
     const today = seoulToday();
     const lead = await leadDays();
-    /* Resend’s shared sender only delivers to the account owner. Until
-       NOTIFY_FROM names a verified domain, the material comes to Mr. Ko to
-       forward: same finding, same attachment, one hop more. Setting
-       NOTIFY_FROM flips this over on its own. */
-    const toStudents = Boolean(process.env.NOTIFY_FROM);
+    /* Gmail can write to anyone. Resend’s shared sender only delivers to
+       the account owner, so until NOTIFY_FROM names a verified domain the
+       material comes to Mr. Ko to forward: same finding, same attachment,
+       one hop more. Either credential flips this over on its own. */
+    const toStudents = mailer() === 'gmail' || Boolean(process.env.NOTIFY_FROM);
 
     /* The end of the window, computed here rather than in SQL. Passing the
        day count as a bind parameter makes Postgres see date + unknown, which
