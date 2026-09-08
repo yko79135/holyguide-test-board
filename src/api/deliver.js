@@ -63,7 +63,7 @@ export default async function handler(req, res) {
       today, leadDays: lead, via: who.via, dryRun,
       emailConfigured: emailConfigured(),
       deliversToStudents: toStudents,
-      sent: [], missing: [], failed: [],
+      sent: [], missing: [], failed: [], skipped: [],
     };
 
     const rows = await sql`
@@ -71,6 +71,7 @@ export default async function handler(req, res) {
              to_char(p.test_date,'YYYY-MM-DD') as test_date,
              p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
              to_char(p.last_check,'YYYY-MM-DD') as last_check,
+             p.delivery_status,
              s.name as student_name, s.email as student_email,
              s.math_course, s.science_course
         from proposals p join students s on s.id = p.student_id
@@ -139,6 +140,28 @@ export default async function handler(req, res) {
         continue;
       }
 
+      /* Claim the row before sending. Two runs starting together both pass the
+         "not sent yet" test in the query above, so without this they would both
+         write to the student. The claim expires after 30 minutes, so a run that
+         dies mid-send leaves a row that is retried rather than one silently
+         stranded — a student receiving nothing is worse than a duplicate. */
+      const claimed = await sql`
+        update proposals
+           set delivery_status = 'sending', claimed_at = now()
+         where id = ${row.id}
+           and delivery_status <> 'sent'
+           and (delivery_status <> 'sending'
+                or claimed_at is null
+                or claimed_at < now() - interval '30 minutes')
+        returning id`;
+      if (!claimed.length) {
+        out.skipped.push({
+          id: row.id, student: row.student_name,
+          reason: 'another run is already sending this one',
+        });
+        continue;
+      }
+
       try {
         const attachment = await fetchMaterial(file);
         const ok = await sendEmail(
@@ -180,19 +203,29 @@ export default async function handler(req, res) {
             id: row.id, student: row.student_name,
             error: emailConfigured() ? 'Resend refused the message' : 'email is not configured yet',
           });
-          await sql`update proposals set last_check = ${today}::date where id = ${row.id}`;
+          await sql`
+            update proposals
+               set delivery_status = ${row.delivery_status},
+                   claimed_at = null,
+                   last_check = ${today}::date
+             where id = ${row.id}`;
           continue;
         }
 
         await sql`
           update proposals
              set delivery_status = 'sent',
+                 claimed_at = null,
                  sent_at = ${today}::date,
                  last_check = ${today}::date,
                  files = ${JSON.stringify([{ id: file.id, name: file.name, kind }])}::jsonb
            where id = ${row.id}`;
         out.sent.push({ id: row.id, student: row.student_name, file: file.name });
       } catch (err) {
+        await sql`
+          update proposals
+             set delivery_status = ${row.delivery_status}, claimed_at = null
+           where id = ${row.id}`;
         out.failed.push({ id: row.id, student: row.student_name, error: err.message });
         console.error('[deliver] could not deliver ' + row.id + ':', err.message);
       }
