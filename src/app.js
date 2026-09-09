@@ -153,6 +153,18 @@
     if(p.status === "approved" && p.delivery_status === "missing"){
       h += '<p class="hint warnish">No study guide or practice test in Drive yet — Mr. Ko has been emailed.</p>';
     }
+    /* What the desktop is doing about it. Without this line an approved
+       test with no materials looks identical whether a build is under way
+       or whether nobody ever asked for one. */
+    if(p.status === "approved" && p.build && !p.sent_at){
+      if(p.build.status === "pending" || p.build.status === "claimed"){
+        h += '<p class="hint">Materials are being made — asked '
+           + esc(fmtDate(p.build.asked_on)) + '.</p>';
+      } else if(p.build.status === "refused"){
+        h += '<p class="hint warnish">These could not be made: '
+           + esc(p.build.reason || "no reason given") + '</p>';
+      }
+    }
     if(opts.actions) h += opts.actions(p);
     return h + '</div>';
   }
@@ -285,7 +297,13 @@
       + '<li>It looks in Drive for that chapter’s study guide (science) or practice test (math).</li>'
       + '<li>If it exists, it emails the file to the student — attached — with you on CC, and marks the test <em>Materials sent</em> here.</li>'
       + '<li>If it doesn’t exist yet, it emails you instead and keeps checking each morning.</li>'
-      + '</ol></section>';
+      + '</ol>'
+      + '<p class="hint">' + (data.lastRun
+          ? 'Last check ran ' + esc(data.lastRun.ran_at) + ' — '
+            + data.lastRun.sent + ' sent, ' + data.lastRun.missing + ' still missing'
+            + (data.lastRun.failed ? ', ' + data.lastRun.failed + ' failed' : '') + '.'
+          : 'No morning check has recorded a run yet.')
+      + '</p></section>';
 
     if(past.length){
       h += '<section><div class="sec-head"><h2>Past &amp; declined</h2><span class="count">'+past.length+'</span></div>'

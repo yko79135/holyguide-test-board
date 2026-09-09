@@ -231,6 +231,25 @@ export default async function handler(req, res) {
       }
     }
 
+    /* One line per run. A morning where nothing needed doing and a
+       morning where nothing ran look identical from the outside, and the
+       free plan keeps only an hour of server logs — so by the time anyone
+       wonders whether this fired, the evidence is already gone. */
+    if (!dryRun) {
+      try {
+        await sql`
+          insert into delivery_runs (via, sent, missing, failed, skipped, detail)
+          values (${who.via}, ${out.sent.length}, ${out.missing.length},
+                  ${out.failed.length}, ${out.skipped.length},
+                  ${JSON.stringify({
+                    sent: out.sent, missing: out.missing,
+                    failed: out.failed, skipped: out.skipped,
+                  })}::jsonb)`;
+      } catch (err) {
+        console.error('[deliver] could not record the run:', err.message);
+      }
+    }
+
     send(res, 200, out);
   } catch (err) {
     fail(res, err);

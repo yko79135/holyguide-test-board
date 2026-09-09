@@ -164,9 +164,29 @@ export async function loadBoard() {
            to_char(sent_at,'YYYY-MM-DD') as sent_at, files,
            to_char(last_check,'YYYY-MM-DD') as last_check
     from proposals order by test_date`;
+  /* The newest build request per proposal, so the board can say "being
+     made" instead of showing an approved test with nothing under it. A
+     student watching an empty row has no way to tell the difference
+     between work in progress and work nobody started. */
+  const builds = await sql`
+    select distinct on (proposal_id)
+           proposal_id, status, reason,
+           to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD') as asked_on
+      from build_requests
+     order by proposal_id, created_at desc`;
+  const byProposal = Object.fromEntries(builds.map((b) => [b.proposal_id, b]));
+  for (const p of proposals) p.build = byProposal[p.id] || null;
+
+  /* The last morning check, so the board can say when it last ran rather
+     than leaving him to guess from an empty inbox. */
+  const runs = await sql`
+    select to_char(ran_at at time zone 'Asia/Seoul','YYYY-MM-DD HH24:MI') as ran_at,
+           via, sent, missing, failed, skipped
+      from delivery_runs order by ran_at desc limit 1`;
+
   const settings = await sql`select key, value from settings`;
   const s = Object.fromEntries(settings.map((r) => [r.key, r.value]));
-  return { students, proposals, leadDays: Number(s.lead_days || 7) };
+  return { students, proposals, leadDays: Number(s.lead_days || 7), lastRun: runs[0] || null };
 }
 
 export function fail(res, err) {
