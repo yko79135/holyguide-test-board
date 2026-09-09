@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { sql, CONFIG } from './_lib.js';
 import { createCalendarEvent, deleteCalendarEvent, whenLabel } from './_integrations.js';
+import { materialKind, findMaterial } from './_materials.js';
 
 /* ------------------------------------------------------------------ *
  * Approval, in one place.
@@ -79,10 +81,10 @@ export async function approveProposal(id, existingEventId, teacherNote = '') {
      where id = ${id}`;
 
   const fresh = await sql`
-    select p.id, p.subject, p.course, p.chapter, p.note, p.teacher_note,
+    select p.id, p.student_id, p.subject, p.course, p.chapter, p.note, p.teacher_note,
            to_char(p.test_date,'YYYY-MM-DD') as test_date,
            p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
-           s.name as student_name
+           s.name as student_name, s.math_course, s.science_course
       from proposals p join students s on s.id = p.student_id
      where p.id = ${id} limit 1`;
 
@@ -93,7 +95,46 @@ export async function approveProposal(id, existingEventId, teacherNote = '') {
   const eventId = await createCalendarEvent(fresh[0], fresh[0].student_name);
   await sql`update proposals set calendar_event_id = ${eventId} where id = ${id}`;
 
-  return { row: fresh[0], eventId };
+  const buildRequestId = await queueBuildIfMissing(fresh[0]);
+
+  return { row: fresh[0], eventId, buildRequestId };
+}
+
+/* Ask the desktop to build the document, but only if Drive hasn't got it.
+ *
+ * Approval is the moment he learns a chapter is coming, so it is the
+ * moment to find out nothing exists for it — not the morning it was due,
+ * which is when the old flow noticed. If a student proposes a test three
+ * weeks out, this puts the gap on someone's desk with three weeks left.
+ *
+ * Best-effort by construction, exactly like the calendar above: an
+ * approval must never fail because Drive was slow or a folder id was
+ * wrong. Worst case nothing is queued and the morning run behaves as it
+ * always has. */
+async function queueBuildIfMissing(row) {
+  try {
+    const kind = materialKind(row.subject);
+    const course =
+      row.course || (row.subject === 'Math' ? row.math_course : row.science_course) || '';
+    if (await findMaterial({ chapter: row.chapter, kind, course })) return null;
+
+    const requestId = 'br_' + randomUUID();
+    /* One open request per proposal, enforced by a partial unique index
+       rather than by checking first — re-approving after a reopen must
+       not queue the same chapter twice. */
+    const rows = await sql`
+      insert into build_requests
+        (id, proposal_id, student_id, subject, course, chapter, kind, test_date)
+      values
+        (${requestId}, ${row.id}, ${row.student_id}, ${row.subject}, ${course},
+         ${row.chapter}, ${kind}, ${row.test_date}::date)
+      on conflict do nothing
+      returning id`;
+    return rows.length ? requestId : null;
+  } catch (err) {
+    console.error('[approve] could not queue a build for ' + row.id + ':', err.message);
+    return null;
+  }
 }
 
 /* The email Mr. Ko gets when the board decided for him. */
