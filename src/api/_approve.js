@@ -1,3 +1,4 @@
+import { CUTOFF_UTC } from './_worker-snapshot-core.mjs';
 import { randomUUID } from 'node:crypto';
 import { sql, CONFIG } from './_lib.js';
 import { createCalendarEvent, deleteCalendarEvent, whenLabel } from './_integrations.js';
@@ -81,7 +82,7 @@ export async function approveProposal(id, existingEventId, teacherNote = '') {
      where id = ${id}`;
 
   const fresh = await sql`
-    select p.id, p.student_id, p.subject, p.course, p.chapter, p.note, p.teacher_note,
+    select p.id, p.student_id, p.subject, p.course, p.chapter, p.note, p.teacher_note, p.created_at,
            to_char(p.test_date,'YYYY-MM-DD') as test_date,
            p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
            s.name as student_name, s.math_course, s.science_course
@@ -112,6 +113,7 @@ export async function approveProposal(id, existingEventId, teacherNote = '') {
  * wrong. Worst case nothing is queued and the morning run behaves as it
  * always has. */
 async function queueBuildIfMissing(row) {
+  if (new Date(row.created_at) >= new Date(CUTOFF_UTC)) return null;
   try {
     const kind = materialKind(row.subject);
     const course =

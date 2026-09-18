@@ -1,3 +1,4 @@
+import { CUTOFF_UTC } from './_worker-snapshot-core.mjs';
 import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
 import { sendEmail, whenLabel, emailConfigured, mailer } from './_integrations.js';
 import { leadDays } from './_approve.js';
@@ -76,6 +77,7 @@ export default async function handler(req, res) {
              s.math_course, s.science_course
         from proposals p join students s on s.id = p.student_id
        where p.status = 'approved'
+         and p.created_at < ${CUTOFF_UTC}::timestamptz
          and p.delivery_status <> 'sent'
          and p.test_date >= ${today}::date
          and p.test_date <= ${until}::date

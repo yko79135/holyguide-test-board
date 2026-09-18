@@ -1,3 +1,4 @@
+import { CUTOFF_UTC } from './_worker-snapshot-core.mjs';
 import { sql, send, fail, body, CONFIG } from './_lib.js';
 import { sendEmail } from './_integrations.js';
 
@@ -42,8 +43,9 @@ export default async function handler(req, res) {
       const rows = await sql`
         update build_requests
            set status = 'claimed', claimed_at = now()
-         where status = 'pending'
-            or (status = 'claimed' and claimed_at < now() - interval '30 minutes')
+         where exists (select 1 from proposals p where p.id=build_requests.proposal_id and p.created_at < ${CUTOFF_UTC}::timestamptz)
+           and (status = 'pending'
+            or (status = 'claimed' and claimed_at < now() - interval '30 minutes'))
         returning id, proposal_id, student_id, subject, course, chapter, kind,
                   to_char(test_date,'YYYY-MM-DD') as test_date`;
       return send(res, 200, { requests: rows });
