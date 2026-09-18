@@ -1,4 +1,5 @@
 import { CUTOFF_UTC } from './_worker-snapshot-core.mjs';
+import { checkWorkerHealth } from './_worker-health.mjs';
 import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
 import { sendEmail, whenLabel, emailConfigured, mailer } from './_integrations.js';
 import { leadDays } from './_approve.js';
@@ -44,6 +45,10 @@ export default async function handler(req, res) {
   try {
     const who = await authorize(req);
     const dryRun = 'dry' in (req.query || {});
+    if(who.via==='cron' && !dryRun) {
+      try { await checkWorkerHealth({sql,sendEmail,recipient:CONFIG.notifyEmail}); }
+      catch { console.error('[worker-health] Health check unavailable.'); }
+    }
     const today = seoulToday();
     const lead = await leadDays();
     /* Gmail can write to anyone. Resend’s shared sender only delivers to

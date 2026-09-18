@@ -3,6 +3,10 @@ import {createDeliveryHandler} from './_worker-delivery-core.mjs';
 
 const db={
   async initialize(){
+    await sql`create table if not exists ubuntu_worker_health
+      (id integer primary key check(id=1),checked_at timestamptz not null,status text not null)`;
+    await sql`create table if not exists ubuntu_worker_alerts
+      (heartbeat_at timestamptz primary key,state text not null)`;
     await sql`create table if not exists ubuntu_delivery_authority
       (id integer primary key check(id=1), eligible_from timestamptz not null default now())`;
     await sql`create table if not exists ubuntu_deliveries
@@ -19,6 +23,10 @@ const db={
   },
   async history(){
     return sql`select reservation_id,state from ubuntu_deliveries order by claimed_at limit 501`;
+  },
+  async heartbeat(status){
+    await sql`insert into ubuntu_worker_health(id,checked_at,status) values(1,now(),${status})
+      on conflict(id) do update set checked_at=excluded.checked_at,status=excluded.status`;
   },
   async proposal(id){
     const rows=await sql`select p.id,p.student_id,p.subject,p.course,p.chapter,

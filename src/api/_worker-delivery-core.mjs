@@ -34,6 +34,12 @@ export function createDeliveryHandler({db,send,secret=()=>process.env.BUILD_SECR
       }
       const epoch=await db.epoch();
       if(!epoch) return send(res,503,{error:'Delivery authority not initialized.'});
+      if(req.method==='POST' && body.action==='heartbeat') {
+        if(!['evaluated','blocked','needs_attention'].includes(body.status))
+          return send(res,400,{error:'Invalid health state.'});
+        await db.heartbeat(body.status);
+        return send(res,200,{ok:true});
+      }
       if(req.method==='GET') {
         const records=await db.history();
         if(records.length>500) return send(res,503,{error:'History exceeds bounded capacity.'});
