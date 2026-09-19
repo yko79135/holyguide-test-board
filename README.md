@@ -29,9 +29,9 @@ src/
   index.html         shell; loads Google Identity Services + app.js
   app.js             the whole UI — vanilla JS, no framework, no build step
   style.css          design tokens, light + dark
-  package.json       one dependency: @neondatabase/serverless
+  package.json       two dependencies: pg, nodemailer
   api/
-    _lib.js          config, PERIODS, Neon client, Google ID-token verification, board query
+    _lib.js          config, PERIODS, Postgres client, Google ID-token verification, board query
     _integrations.js Google Calendar (service account) and Resend email
     config.js        GET  — public: sign-in config, the period table, which integrations are live
     board.js         GET  — the whole board for the signed-in user
@@ -80,7 +80,7 @@ events behind.
 
 ## Data
 
-Postgres (Neon), three tables: `students`, `proposals`, `settings`. `settings.lead_days`
+Postgres (Supabase), three tables: `students`, `proposals`, `settings`. `settings.lead_days`
 controls how many days before a test the materials go out (default 7). Dates are handled
 in `Asia/Seoul` — see `seoulToday()`.
 
@@ -93,7 +93,8 @@ Vercel project **holyguide-test-board**, Root Directory `src`, no framework pres
 
 | Variable | Required | What |
 |---|---|---|
-| `DATABASE_URL` | yes | Neon pooled connection string |
+| `DATABASE_URL` | yes | Supabase **pooler** connection string (see below) |
+| `DATABASE_CA_CERT` | no | pooler CA; supplying it turns on TLS certificate verification |
 | `GOOGLE_CLIENT_ID` | no | OAuth Web client id; deployment origin must be an authorized JS origin |
 | `TEACHER_EMAIL` | no | the one account with teacher powers |
 | `GOOGLE_SA_EMAIL` | no | service account address; calendar must be shared with it |
@@ -107,3 +108,29 @@ See `src/.env.example` for the full annotated list.
 
 `DATABASE_URL` has no fallback on purpose. An earlier revision carried a live connection
 string inline; that credential has been rotated and must never come back into the source.
+
+## The database is Supabase
+
+The board ran on Neon and now runs on Supabase. The move was a driver swap and nothing
+else: every query in `src/api` is a tagged template — ``sql`select ... ${id}` `` — so
+`_lib.js` exports a `sql` that keeps exactly that contract, a tagged template in and a
+plain array of rows out. `pg` and `@neondatabase/serverless` share `pg-types`, so every
+column still arrives parsed the way it always was (`date` and `timestamptz` as `Date`,
+`time` and `int8` as string, `jsonb` already inflated). No call site changed.
+
+Two things about Supabase specifically are not optional:
+
+- **The connection string must be a pooler URI.** The direct host,
+  `db.<ref>.supabase.co`, has no A record — it is IPv6-only — so a Vercel function
+  cannot resolve it. Use the transaction pooler on port 6543, whose user is
+  `postgres.<ref>`. In transaction mode the pooler cannot carry named prepared
+  statements; `pool.query(text, values)` never creates one, so the client is already in
+  the shape that mode requires.
+- **TLS is always on, verification is opt-in.** Without `DATABASE_CA_CERT` the
+  connection is encrypted but the server's certificate is not verified, because the
+  pooler's CA is not in Node's default trust store everywhere. Supply the CA from
+  Settings → Database → SSL configuration to close that gap.
+
+`sslmode=disable` in `DATABASE_URL` turns TLS off, which exists so the board can be
+pointed at a Postgres on localhost during development. Nothing reachable over a network
+should use it.

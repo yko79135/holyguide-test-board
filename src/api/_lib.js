@@ -1,4 +1,4 @@
-import { neon } from '@neondatabase/serverless';
+import pg from 'pg';
 
 /* A service-account PEM reaches this process through a form field, and
    that field mangles it in three reliable ways: the value arrives still
@@ -79,7 +79,57 @@ export const PERIODS = [
   { n: 8, start: '15:20', end: '16:00' },
 ];
 
-export const sql = neon(CONFIG.databaseUrl);
+/* Supabase is reached over an ordinary Postgres connection, so the driver
+   is node-postgres rather than Neon's HTTP client.
+
+   Only this block changed in the move. Every call site in the codebase is
+   a tagged template — sql`select ... ${id}` — and `sql` below keeps that
+   exact contract: a tagged template in, a plain array of rows out. The two
+   drivers share pg-types, so every column still arrives parsed the way it
+   always was (date and timestamptz as Date, time and int8 as string, jsonb
+   already inflated); nothing downstream had to learn a new shape.
+
+   Supabase's direct host, db.<ref>.supabase.co, has no A record — it is
+   IPv6-only — so the connection string must be a *pooler* URI. In
+   transaction mode the pooler cannot carry named prepared statements, and
+   pool.query() with text and values never creates one, so the shim is
+   already in the shape that mode requires.
+
+   TLS is always on. The chain is verified only when DATABASE_CA_CERT is
+   supplied, because the pooler's CA is not in Node's default trust store
+   on every platform; without it the connection is encrypted but the
+   server's certificate is not checked. */
+const ca = (process.env.DATABASE_CA_CERT || '').replace(/\\n/g, '\n').trim();
+
+/* sslmode=disable is honoured so the board can be pointed at a Postgres on
+   localhost during development. Nothing reachable over a network should
+   ever use it, and Supabase refuses the connection without TLS anyway. */
+const sslDisabled = /[?&]sslmode=disable\b/.test(CONFIG.databaseUrl || '');
+
+const pool = new pg.Pool({
+  connectionString: CONFIG.databaseUrl,
+  ssl: sslDisabled ? false : ca ? { ca, rejectUnauthorized: true } : { rejectUnauthorized: false },
+  /* One connection per warm function instance. A serverless process that
+     is frozen mid-request must not leave a fistful of sockets held open
+     against the pooler's connection limit. */
+  max: 1,
+  idleTimeoutMillis: 10_000,
+  connectionTimeoutMillis: 10_000,
+  allowExitOnIdle: true,
+});
+
+/* A pool emits 'error' for a connection dropped while idle. Unhandled, that
+   event is an uncaught exception that takes the whole function down between
+   requests — the pool itself simply discards the socket and carries on. */
+pool.on('error', (err) => {
+  console.error('pg pool: idle client error —', err.message);
+});
+
+export function sql(strings, ...values) {
+  let text = strings[0];
+  for (let i = 0; i < values.length; i++) text += '$' + (i + 1) + strings[i + 1];
+  return pool.query(text, values).then((r) => r.rows);
+}
 
 export function send(res, code, obj) {
   res.setHeader('content-type', 'application/json; charset=utf-8');
