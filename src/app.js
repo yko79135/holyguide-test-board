@@ -42,6 +42,22 @@
     if(p.test_time) return p.test_time;
     return "";
   }
+  /* Geometry runs two test formats and the desktop will not build anything
+     until it knows which. Matched on the course text the student typed, so a
+     roster that says "Geometry (4th ed.)" and one that says "geometry" both
+     ask the question. */
+  function isGeometry(subject, course){
+    return subject === "Math" && /geometry/i.test(String(course || ""));
+  }
+  var GEO_MODES = [
+    {v:"bju", label:"BJU chapter test", hint:"The publisher's written chapter test."},
+    {v:"proofs", label:"Six demonstrated chapter proofs", hint:"You prove six of this chapter's theorems."}
+  ];
+  function geoModeLabel(m){
+    for(var i=0;i<GEO_MODES.length;i++){ if(GEO_MODES[i].v===m) return GEO_MODES[i].label; }
+    return "";
+  }
+
   function toast(m){
     toastMsg = m;
     if(toastTimer) clearTimeout(toastTimer);
@@ -137,6 +153,7 @@
     h += '<span class="row-date">'+esc(fmtLong(p.test_date))+(when ? ' · '+esc(when) : '')+'</span>';
     h += '<span class="row-who">'+(opts.showWho ? esc(s.name)+' — ' : '')+esc(p.course)+'</span>';
     h += '<span class="spacer"></span>'+pillFor(p)+'</div>';
+    if(p.geometry_mode) h += '<p class="hint">Format: '+esc(geoModeLabel(p.geometry_mode))+'</p>';
     if(p.note) h += '<p class="row-note">“'+esc(p.note)+'”</p>';
     if(p.teacher_note) h += '<p class="row-note">Mr. Ko: '+esc(p.teacher_note)+'</p>';
     if(p.status === "approved") h += timeline(p);
@@ -200,6 +217,21 @@
       + '<input id="f-course" type="text" data-field="course" value="'+esc(course)+'" placeholder="e.g. Geometry (4th ed.)"></div>'
       + '<div><label for="f-chapter">Chapter</label>'
       + '<input id="f-chapter" type="text" data-field="chapter" value="'+esc(draft.chapter||"")+'" placeholder="e.g. Ch 8"></div></div>';
+
+    /* Geometry only. Two real formats, and the desktop cannot start making
+       anything until the student says which one they are sitting. */
+    if(isGeometry(subj, course)){
+      h += '<div><label>How this Geometry test is taken</label><div class="seg geo-modes">'
+        + GEO_MODES.map(function(m){
+            return '<button type="button" data-act="geomode" data-v="'+m.v+'" aria-pressed="'
+              + (draft.geometryMode===m.v)+'">'+esc(m.label)+'</button>';
+          }).join("")
+        + '</div><p class="hint'+(draft.geometryMode?'':' warnish')+'">'
+        + (draft.geometryMode
+            ? esc((GEO_MODES.filter(function(m){return m.v===draft.geometryMode;})[0]||{}).hint||"")
+            : 'Pick one — Mr. Ko cannot prepare a Geometry test without it.')
+        + '</p></div>';
+    }
     var slot = draft.slot == null ? "" : String(draft.slot);
     var periods = (cfg && cfg.periods) || [];
     h += '<div class="f-row"><div><label for="f-date">Test date</label>'
@@ -364,6 +396,21 @@
     var f = e.target.getAttribute && e.target.getAttribute("data-field");
     if(!f) return;
     if(f==="course"||f==="chapter"||f==="note"||f==="time") draft[f] = e.target.value;
+    /* A course edited away from Geometry must not keep a format nobody can
+       sit. Re-render only when the answer actually flips, because render()
+       rebuilds the whole form and would steal focus on every keystroke. */
+    if(f==="course"){
+      var wasGeo = !!document.querySelector('.geo-modes');
+      var nowGeo = isGeometry(draft.subject||"Math", e.target.value);
+      if(!nowGeo) draft.geometryMode = null;
+      if(wasGeo !== nowGeo){
+        render();
+        /* render() replaced the node being typed into. Put the caret back
+           where it was, or the student loses the rest of "Geometry (4th ed.)". */
+        var back = document.getElementById("f-course");
+        if(back){ back.focus(); back.setSelectionRange(back.value.length, back.value.length); }
+      }
+    }
     if(f==="date"){ draft.date = e.target.value; render(); }
     if(f==="slot"){ draft.slot = e.target.value; if(draft.slot !== "other") draft.time = ""; render(); }
   });
@@ -379,8 +426,10 @@
       var s = studentById(data.me.studentId);
       draft.subject = v;
       draft.course = (v === "Math" ? s.math_course : s.science_course) || "";
+      if(!isGeometry(v, draft.course)) draft.geometryMode = null;
       return render();
     }
+    if(act === "geomode"){ draft.geometryMode = v; return render(); }
     if(act === "propose"){
       var payload = {
         subject: draft.subject || "Math",
@@ -389,9 +438,13 @@
         date: draft.date || val("date"),
         note: draft.note != null ? draft.note : val("note"),
         period: (draft.slot && draft.slot !== "other") ? Number(draft.slot) : null,
-        time: draft.slot === "other" ? (draft.time || val("time")) : ""
+        time: draft.slot === "other" ? (draft.time || val("time")) : "",
+        geometryMode: draft.geometryMode || null
       };
       if(!String(payload.chapter).trim()) return toast("Which chapter is the test on?");
+      if(isGeometry(payload.subject, payload.course) && !payload.geometryMode){
+        return toast("Choose the BJU chapter test or six demonstrated proofs.");
+      }
       if(!payload.date) return toast("Pick a test date first.");
       if(draft.slot === "other" && !payload.time) return toast("Type the time, or pick a class period.");
       return api("/api/propose", payload).then(function(d){ if(d){ draft = {}; toast("Sent to Mr. Ko."); } });

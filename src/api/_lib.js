@@ -206,7 +206,7 @@ export async function loadBoard() {
     select id, name, full_name, grade, email, email_confirmed, math_course, science_course
     from students order by sort_order, name`;
   const proposals = await sql`
-    select id, student_id, subject, course, chapter,
+    select id, student_id, subject, course, chapter, geometry_mode,
            to_char(test_date,'YYYY-MM-DD') as test_date,
            test_period, to_char(test_time,'HH24:MI') as test_time, calendar_event_id,
            note, status, teacher_note,

@@ -114,6 +114,37 @@ delivered only on that. Marking on intent would silently strand a student.
 
 ---
 
+## Geometry has two test formats, and the student picks
+
+Added 2026-09-22. The desktop build queue refuses a Geometry reservation that
+does not say which format it is — `schoolwork_notices.py` returns
+`geometry_mode_required`: *"Choose BJU or six demonstrated chapter proofs for
+this Geometry test."* Before this the choice lived nowhere, so every Geometry
+reservation stalled at the queue with nothing to unblock it.
+
+`proposals.geometry_mode` is `'bju'`, `'proofs'`, or NULL. Only Geometry
+proposals carry a value; the column is nullable and existing rows keep NULL
+rather than being backfilled into a format nobody chose. Migration:
+`docs/migrations/2026-09-22-geometry-mode.sql` — **it must run before this
+deploy**, or every insert in `/api/propose` fails on an unknown column.
+
+Geometry is detected from the course text (`/geometry/i` on a Math proposal),
+not from a course list, so a roster reading "Geometry (4th ed.)" and one
+reading "geometry" both ask. The value is surfaced in `/api/worker-snapshot`,
+on the board rows, and in the "nothing to send" email so the format is visible
+wherever the decision matters.
+
+`propose.js` was split into `_propose-core.mjs` plus thin wiring, the same
+shape the worker routes already use, because an ES module namespace is
+read-only and its rules could not otherwise be tested without a database.
+
+Proven by: `tests/geometry-mode.mjs` (rules, no DB) and
+`tests/browser-geometry-mode.mjs` (headless Chrome over CDP against a stub
+board — the field renders, refuses an empty choice client-side, sends
+`geometryMode`, and disappears for Science and for Algebra). Run the second
+with `SHOT=/tmp/x.png` to get a screenshot. **Not proven against the live
+board or a real Supabase.**
+
 ## Still open
 
 1. **One live send.** The cron has never fired and no email has ever gone out.

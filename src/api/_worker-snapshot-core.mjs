@@ -21,7 +21,7 @@ export function createHandler({ sql, send, secret = () => process.env.BUILD_SECR
         return res.status(200).end();
       }
       const rows = await sql`
-        select p.id, p.student_id, p.subject, p.course, p.chapter,
+        select p.id, p.student_id, p.subject, p.course, p.chapter, p.geometry_mode,
                to_char(p.test_date, 'YYYY-MM-DD') as test_date,
                p.test_period, to_char(p.test_time, 'HH24:MI') as test_time,
                p.status, p.created_at, p.decided_at, p.delivery_status, p.sent_at,
