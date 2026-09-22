@@ -107,6 +107,11 @@ input[type=date],input[type=time]{font-family:"IBM Plex Mono",monospace;}
 .seg button{flex:1;padding:9px 10px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);
   cursor:pointer;font-size:13.5px;font-weight:600;color:var(--muted);}
 .seg button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);}
+/* Subject is two short words; the Geometry formats are a short phrase and a
+   long one, which squeezed to one character per line on a phone. Let these
+   two wrap and stack instead of forcing them into equal columns. */
+.seg.geo-modes{flex-wrap:wrap;}
+.seg.geo-modes button{flex:1 1 220px;line-height:1.3;}
 .hint{font-size:12.5px;color:var(--muted);}
 .hint.warnish{color:var(--warn);}
 

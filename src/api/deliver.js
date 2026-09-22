@@ -3,7 +3,7 @@ import { checkWorkerHealth } from './_worker-health.mjs';
 import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
 import { sendEmail, whenLabel, emailConfigured, mailer } from './_integrations.js';
 import { leadDays } from './_approve.js';
-import { materialKind, findMaterial, fetchMaterial, listChapterFiles } from './_materials.js';
+import { materialKind, findMaterial, fetchMaterial, listChapterFiles, geometryModeLabel } from './_materials.js';
 
 /* ------------------------------------------------------------------ *
  * The morning run.
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     };
 
     const rows = await sql`
-      select p.id, p.subject, p.course, p.chapter,
+      select p.id, p.subject, p.course, p.chapter, p.geometry_mode,
              to_char(p.test_date,'YYYY-MM-DD') as test_date,
              p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
              to_char(p.last_check,'YYYY-MM-DD') as last_check,
@@ -126,6 +126,7 @@ export default async function handler(req, res) {
                 row.student_name + '’s test is on ' + whenLabel(row) + ' and there is nothing to send.',
                 '',
                 'Looking for: ' + wanted,
+                row.geometry_mode ? 'Format the student chose: ' + geometryModeLabel(row.geometry_mode) : '',
                 'Nothing in Drive matches that chapter and course.',
                 '',
                 'The board will look again tomorrow morning and send it the moment it exists.',

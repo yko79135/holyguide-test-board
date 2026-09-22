@@ -10,6 +10,22 @@ export function materialKind(subject) {
   return subject === 'Math' ? 'Practice Test' : 'Study Guide';
 }
 
+/* Geometry alone runs two test formats, and the desktop build queue will
+   not start until it knows which: the BJU chapter test, or six chapter
+   theorems demonstrated on the board. The choice belongs to the student
+   because it is their test, so it is asked on the proposal. */
+export const GEOMETRY_MODES = ['bju', 'proofs'];
+
+export function isGeometry(subject, course) {
+  return subject === 'Math' && /geometry/i.test(String(course || ''));
+}
+
+export function geometryModeLabel(mode) {
+  if (mode === 'bju') return 'BJU chapter test';
+  if (mode === 'proofs') return 'Six demonstrated chapter proofs';
+  return '';
+}
+
 /* Drive holds these titles in two hands. Written by a person they read
    'Ch01 Study Guide - Chemistry (5th ed.)'; written by the LaTeX build
    they read 'Ch13_Practice_Test__Algebra_1_3rd_ed_.pdf'. Drop everything
