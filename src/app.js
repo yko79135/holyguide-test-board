@@ -288,8 +288,18 @@
           + '<button class="btn sm" data-act="approve" data-id="'+p.id+'"'+(busy?" disabled":"")+'>Approve</button>'
           + '<button class="btn danger sm" data-act="decline" data-id="'+p.id+'"'+(busy?" disabled":"")+'>Decline</button></div>';
       }
-      if(p.status === "approved" && !p.sent_at){
-        return '<div class="actions"><button class="btn ghost sm" data-act="reopen" data-id="'+p.id+'">Move back to pending</button></div>';
+      if(p.status === "approved"){
+        /* A test that has already been sat needs nothing. A test that was
+           NOT sat — illness, a closure — has to be taken off the board, or
+           its row keeps that chapter reserved and the student can never
+           book it again. Reopen is not that button: it makes the row
+           pending, which still counts as reserved. Decline is. */
+        var h = '<div class="actions">';
+        if(!p.sent_at) h += '<button class="btn ghost sm" data-act="reopen" data-id="'+p.id+'">Move back to pending</button>';
+        h += '<button class="btn danger sm" data-act="decline" data-id="'+p.id+'"'+(busy?" disabled":"")+'>'
+          + (p.test_date < t ? "Did not sit it — free the chapter" : "Cancel this test")
+          + '</button></div>';
+        return h;
       }
       return "";
     }
@@ -339,7 +349,7 @@
 
     if(past.length){
       h += '<section><div class="sec-head"><h2>Past &amp; declined</h2><span class="count">'+past.length+'</span></div>'
-        + '<div class="rows">'+past.map(function(p){ return rowHTML(p,{showWho:true}); }).join("")+'</div></section>';
+        + '<div class="rows">'+past.map(function(p){ return rowHTML(p,{showWho:true,actions:acts}); }).join("")+'</div></section>';
     }
     return h;
   }
