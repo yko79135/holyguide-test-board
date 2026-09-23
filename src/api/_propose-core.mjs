@@ -68,13 +68,24 @@ export function createHandler({
         time = '';
       }
 
+      /* One live date per chapter — but only a date that has not happened
+         yet. A test that was missed (illness, a closure, a clash) leaves an
+         approved row sitting in the past, and the old check read that row as
+         "you already have a date" and refused the student a second one
+         forever. The row is kept, because it is the record that the date was
+         once booked; it simply stops blocking. Anything still on or after
+         today does block, so this is not a way to hold two dates at once. */
       const dupe = await sql`
-        select id from proposals
+        select to_char(test_date,'YYYY-MM-DD') as test_date from proposals
          where student_id = ${me.studentId} and subject = ${subject}
            and lower(chapter) = lower(${chapter}) and status in ('pending','approved')
+           and test_date >= ${today}::date
          limit 1`;
       if (dupe.length) {
-        return send(res, 409, { error: 'You already have a ' + subject + ' ' + chapter + ' date on the board.' });
+        return send(res, 409, {
+          error: 'You already have a ' + subject + ' ' + chapter + ' date on the board — ' +
+                 dupe[0].test_date + '. Withdraw it first if you want a different day.',
+        });
       }
 
       const id = newId();
