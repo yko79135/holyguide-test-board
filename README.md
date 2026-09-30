@@ -12,7 +12,8 @@ Live: https://holyguide-test-board.vercel.app
   class period (or type a time, or leave it open), and can withdraw a proposal while it
   is still pending.
 - **Mr. Ko** (`TEACHER_EMAIL`) sees every proposal, approves or declines with an optional
-  note, can move an approved test back to pending, and edits the roster — the email
+  note, can reschedule an approved test to a new date / period (it stays approved and its
+  calendar event moves), can move an approved test back to pending, and edits the roster — the email
   address each student signs in with and receives materials at.
 - **On submission** he gets an email. **On approval** the test lands on his Google
   Calendar.
@@ -37,7 +38,7 @@ src/
     board.js         GET  — the whole board for the signed-in user
     propose.js       POST — student creates a proposal; emails the teacher
     withdraw.js      POST — student removes their own pending proposal
-    decide.js        POST — teacher approves / declines / reopens; syncs the calendar
+    decide.js        POST — teacher approves / declines / reopens / reschedules; syncs the calendar
     roster.js        POST — teacher edits a student's email and courses
 ```
 
@@ -74,7 +75,8 @@ megabytes for one signature and one POST. The setup step people miss: the calend
 be *shared* with the service account's address, with "Make changes to events". Without
 that every insert returns 404 for a calendar that plainly exists.
 
-Approve → insert, store the event id. Decline or reopen → delete it and null the column.
+Approve → insert, store the event id. Reschedule → delete the old event, insert one on
+the new date. Decline or reopen → delete it and null the column.
 Re-approving after a reopen deletes the stale event first, so a proposal never leaves two
 events behind.
 

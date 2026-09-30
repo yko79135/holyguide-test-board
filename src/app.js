@@ -4,6 +4,8 @@
   var cfg = null, token = null, data = null, busy = false;
   var authError = "", toastMsg = "", toastTimer = null;
   var draft = {}, editRoster = false, gsiReady = false;
+  /* The approved test whose date is being moved, if any: {id, date, slot, time}. */
+  var resched = null;
 
   function ss(k,v){ try{ return v===undefined ? sessionStorage.getItem(k) : sessionStorage.setItem(k,v); }catch(e){ return null; } }
   function ssDel(k){ try{ sessionStorage.removeItem(k); }catch(e){} }
@@ -275,6 +277,31 @@
     return h;
   }
 
+  /* Moving an approved test keeps it approved — no trip back through
+     pending. Same period picker as the student's form. */
+  function reschedHTML(p){
+    var r = resched, slot = r.slot == null ? "" : String(r.slot);
+    var periods = (cfg && cfg.periods) || [];
+    return '<div class="form resched">'
+      + '<div class="f-row"><div><label for="r-date">New test date</label>'
+      + '<input id="r-date" type="date" data-field="r-date" min="'+today()+'" value="'+esc(r.date||"")+'">'
+      + (p.sent_at ? '<p class="hint">Materials already went out — they will not be sent again.</p>' : '')
+      + '</div><div><label for="r-slot">Class period</label>'
+      + '<select id="r-slot" data-field="r-slot">'
+      + '<option value=""'+(slot===""?' selected':'')+'>Not sure yet</option>'
+      + periods.map(function(x){
+          return '<option value="'+x.n+'"'+(slot===String(x.n)?' selected':'')+'>'
+            + x.n+'교시 · '+x.start+'–'+x.end+'</option>';
+        }).join("")
+      + '<option value="other"'+(slot==="other"?' selected':'')+'>Other time…</option>'
+      + '</select>'
+      + (slot==="other" ? '<input type="time" data-field="r-time" value="'+esc(r.time||"")+'" style="margin-top:8px">' : '')
+      + '</div></div>'
+      + '<div class="actions"><button class="btn sm" data-act="resched-save" data-id="'+p.id+'"'+(busy?" disabled":"")+'>Save new date</button>'
+      + '<button class="btn ghost sm" data-act="resched-cancel">Cancel</button>'
+      + '<span class="hint">Stays approved; the calendar event moves with it.</span></div></div>';
+  }
+
   function teacherView(){
     var t = today();
     var pend = data.proposals.filter(function(p){ return p.status==="pending"; });
@@ -294,7 +321,9 @@
            its row keeps that chapter reserved and the student can never
            book it again. Reopen is not that button: it makes the row
            pending, which still counts as reserved. Decline is. */
+        if(resched && resched.id === p.id) return reschedHTML(p);
         var h = '<div class="actions">';
+        h += '<button class="btn ghost sm" data-act="resched-open" data-id="'+p.id+'">Reschedule</button>';
         if(!p.sent_at) h += '<button class="btn ghost sm" data-act="reopen" data-id="'+p.id+'">Move back to pending</button>';
         h += '<button class="btn danger sm" data-act="decline" data-id="'+p.id+'"'+(busy?" disabled":"")+'>'
           + (p.test_date < t ? "Did not sit it — free the chapter" : "Cancel this test")
@@ -422,6 +451,11 @@
       }
     }
     if(f==="date"){ draft.date = e.target.value; render(); }
+    if(resched){
+      if(f==="r-date"){ resched.date = e.target.value; }
+      if(f==="r-time"){ resched.time = e.target.value; }
+      if(f==="r-slot"){ resched.slot = e.target.value; if(resched.slot !== "other") resched.time = ""; render(); }
+    }
     if(f==="slot"){ draft.slot = e.target.value; if(draft.slot !== "other") draft.time = ""; render(); }
   });
 
@@ -463,6 +497,27 @@
     if(act === "approve" || act === "decline"){
       return api("/api/decide", {id:id, decision:act, teacherNote:val("tnote-"+id)})
         .then(function(d){ if(d) toast(act === "approve" ? "Approved." : "Declined."); });
+    }
+    if(act === "resched-open"){
+      var rp = data.proposals.filter(function(x){ return x.id === id; })[0];
+      if(!rp) return;
+      resched = { id:id, date: rp.test_date >= today() ? rp.test_date : "",
+                  slot: rp.test_period != null ? String(rp.test_period) : (rp.test_time ? "other" : ""),
+                  time: rp.test_period != null ? "" : (rp.test_time || "") };
+      return render();
+    }
+    if(act === "resched-cancel"){ resched = null; return render(); }
+    if(act === "resched-save"){
+      var rb = {
+        id:id, decision:"reschedule", date: resched.date || val("r-date"),
+        period: (resched.slot && resched.slot !== "other") ? Number(resched.slot) : null,
+        time: resched.slot === "other" ? (resched.time || val("r-time")) : ""
+      };
+      if(!rb.date) return toast("Pick the new test date.");
+      if(resched.slot === "other" && !rb.time) return toast("Type the time, or pick a class period.");
+      return api("/api/decide", rb).then(function(d){
+        if(d){ resched = null; toast("Rescheduled to "+fmtLong(rb.date)+"."); }
+      });
     }
     if(act === "reopen") return api("/api/decide", {id:id, decision:"reopen"});
     if(act === "save-student"){
