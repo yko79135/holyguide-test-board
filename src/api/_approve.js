@@ -45,30 +45,14 @@ function isWeekend(iso) {
 }
 
 /* Returns the reasons this proposal must NOT be auto-approved.
-   Empty array => approve it. */
-export async function holdReasons(p, today, lead) {
-  const reasons = [];
+   Empty array => approve it.
 
-  const notice = dayNumber(p.test_date) - dayNumber(today);
-  if (notice < lead) {
-    reasons.push(
-      'only ' + notice + ' day' + (notice === 1 ? '' : 's') +
-      ' notice — the board asks for ' + lead
-    );
-  }
-
-  if (isWeekend(p.test_date)) reasons.push('the date falls on a weekend');
-
-  const clash = await sql`
-    select id from proposals
-     where student_id = ${p.student_id}
-       and test_date = ${p.test_date}
-       and status = 'approved'
-       and id <> ${p.id}
-     limit 1`;
-  if (clash.length) reasons.push('this student already has an approved test that day');
-
-  return reasons;
+   Mr. Ko, 2026-10-01: "automatically approve all test requests no matter
+   what from now on." Short notice, weekends and a second test on the same
+   day no longer hold a request; every one is approved at once. The
+   'auto_approve' = 'off' setting above remains the only way to stop it. */
+export async function holdReasons(_p, _today, _lead) {
+  return [];
 }
 
 /* The approve path, shared by the teacher's button and auto-approval.
