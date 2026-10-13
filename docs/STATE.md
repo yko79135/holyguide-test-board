@@ -20,7 +20,7 @@ A session that actually ran the commands found neither was true.
 | Calendar on approve | working | event `cdb8qk7idgfd75pvsihrq7683g`, seen on the calendar |
 | Auto-approval | **on** | rules unit-tested; no live proposal yet |
 | Materials delivery | built, **never sent** | dry run matches the right file; no real send |
-| Daily cron 07:00 KST | registered | Vercel Cron Jobs page; **has never fired** |
+| Daily cron 07:00 KST | **back on 2026-10-13** | it fired 2026-09-19..21 (`delivery_runs`); stopped 09-22 for the Samsung worker, which then sent nothing for three weeks |
 
 `/api/health` is the fastest way to check all of it. It reports `db`,
 `saKeyParses`, `sender`, and per-credential booleans with error codes, and no
@@ -147,7 +147,13 @@ board or a real Supabase.**
 
 ## Still open
 
-1. **One live send.** The cron has never fired and no email has ever gone out.
+1. **The board is the sender again (2026-10-13).** The Samsung worker took every
+   proposal created after 2026-09-18 and never sent one: `ubuntu_deliveries`
+   was empty while it checked in every few minutes. `/api/deliver` now takes
+   every approved test and claims it in `ubuntu_deliveries` first, the same
+   ledger the worker claims in, so the two can never both send. The morning
+   run also creates any missing calendar event for an approved future test.
+1a. **One live send.** The cron has never fired and no email has ever gone out.
    Everything upstream is verified; the last hop is not.
 2. **Auto-approval is on, with no rules.** Since 2026-10-13 every proposal is
    approved on submission — the notice / weekend / same-day holds were removed

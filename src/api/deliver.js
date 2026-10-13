@@ -1,7 +1,7 @@
-import { CUTOFF_UTC } from './_worker-snapshot-core.mjs';
+import { createHash, randomUUID } from 'node:crypto';
 import { checkWorkerHealth } from './_worker-health.mjs';
 import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
-import { sendEmail, whenLabel, emailConfigured, mailer } from './_integrations.js';
+import { sendEmail, whenLabel, emailConfigured, mailer, createCalendarEvent, calendarConfigured } from './_integrations.js';
 import { leadDays } from './_approve.js';
 import { materialKind, findMaterial, fetchMaterial, listChapterFiles, geometryModeLabel } from './_materials.js';
 
@@ -15,7 +15,15 @@ import { materialKind, findMaterial, fetchMaterial, listChapterFiles, geometryMo
  * "a week before, or immediately if it is sooner" is the same rule said
  * once.
  *
- * Two invariants worth keeping:
+ * This is the one sender again. From 2026-09-22 it ran only for rows
+ * created before the Samsung worker's cutoff, and the worker was meant
+ * to take every newer row. It never sent one, so every test after
+ * 2026-09-18 went out with nothing. The board now takes every approved
+ * test. The worker can still exist: both sides claim a test by inserting
+ * its row into ubuntu_deliveries with ON CONFLICT DO NOTHING, so whoever
+ * gets there first sends and the other skips.
+ *
+ * Invariants worth keeping:
  *
  *   A row is marked delivered only when Resend actually accepted the
  *   message. Marking on intent would quietly strand a student.
@@ -82,11 +90,36 @@ export default async function handler(req, res) {
              s.math_course, s.science_course
         from proposals p join students s on s.id = p.student_id
        where p.status = 'approved'
-         and p.created_at < ${CUTOFF_UTC}::timestamptz
          and p.delivery_status <> 'sent'
+         and not exists (select 1 from ubuntu_deliveries u where u.reservation_id = p.id)
          and p.test_date >= ${today}::date
          and p.test_date <= ${until}::date
        order by p.test_date`;
+
+    /* An approved test with no calendar event: Google refused the insert
+       when it was approved, or the row was approved outside the board.
+       The board used to wait for Mr. Ko to press Approve again; the
+       morning run retries it instead. */
+    out.calendarRepaired = [];
+    if (!dryRun && calendarConfigured()) {
+      const bare = await sql`
+        select p.id, p.subject, p.course, p.chapter, p.note, p.teacher_note,
+               to_char(p.test_date,'YYYY-MM-DD') as test_date,
+               p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
+               s.name as student_name
+          from proposals p join students s on s.id = p.student_id
+         where p.status = 'approved' and p.calendar_event_id is null
+           and p.test_date >= ${today}::date
+         order by p.test_date`;
+      for (const b of bare) {
+        const eventId = await createCalendarEvent(b, b.student_name);
+        if (!eventId) continue;
+        await sql`
+          update proposals set calendar_event_id = ${eventId}
+           where id = ${b.id} and calendar_event_id is null`;
+        out.calendarRepaired.push({ id: b.id, student: b.student_name });
+      }
+    }
 
     for (const row of rows) {
       const kind = materialKind(row.subject);
@@ -170,8 +203,35 @@ export default async function handler(req, res) {
         continue;
       }
 
+      let ledgerToken = null;
       try {
         const attachment = await fetchMaterial(file);
+        const recipient = toStudents ? row.student_email : CONFIG.notifyEmail;
+
+        /* The shared ledger. The worker inserts the same row before it
+           sends, so exactly one of us gets it. */
+        const token = 'board_' + randomUUID();
+        const sha = createHash('sha256').update(attachment.content).digest('hex');
+        const ledger = await sql`
+          insert into ubuntu_deliveries
+            (reservation_id, student_id, token, state, revision, material_sha256, email)
+          select p.id, p.student_id, ${token}, 'claimed', 'board', ${sha}, ${recipient}
+            from proposals p where p.id = ${row.id}
+          on conflict (reservation_id) do nothing
+          returning reservation_id`;
+        if (!ledger.length) {
+          await sql`
+            update proposals
+               set delivery_status = ${row.delivery_status}, claimed_at = null
+             where id = ${row.id}`;
+          out.skipped.push({
+            id: row.id, student: row.student_name,
+            reason: 'the Samsung worker already claimed this one',
+          });
+          continue;
+        }
+        ledgerToken = token;
+
         const ok = await sendEmail(
           toStudents
             ? {
@@ -207,6 +267,9 @@ export default async function handler(req, res) {
         );
 
         if (!ok) {
+          /* Not accepted, so not sent: release the ledger row so tomorrow
+             retries rather than leaving the test claimed forever. */
+          await sql`delete from ubuntu_deliveries where reservation_id = ${row.id} and token = ${ledgerToken}`;
           out.failed.push({
             id: row.id, student: row.student_name,
             error: emailConfigured() ? 'Resend refused the message' : 'email is not configured yet',
@@ -221,6 +284,9 @@ export default async function handler(req, res) {
         }
 
         await sql`
+          update ubuntu_deliveries set state = 'sent', finished_at = now()
+           where reservation_id = ${row.id} and token = ${ledgerToken}`;
+        await sql`
           update proposals
              set delivery_status = 'sent',
                  claimed_at = null,
@@ -230,6 +296,10 @@ export default async function handler(req, res) {
            where id = ${row.id}`;
         out.sent.push({ id: row.id, student: row.student_name, file: file.name });
       } catch (err) {
+        /* sendEmail never throws, so reaching here means nothing went out. */
+        if (ledgerToken) {
+          await sql`delete from ubuntu_deliveries where reservation_id = ${row.id} and token = ${ledgerToken}`;
+        }
         await sql`
           update proposals
              set delivery_status = ${row.delivery_status}, claimed_at = null
