@@ -149,7 +149,9 @@ board or a real Supabase.**
 
 1. **One live send.** The cron has never fired and no email has ever gone out.
    Everything upstream is verified; the last hop is not.
-2. **Auto-approval is on.** Students can book dates unattended. `update settings
+2. **Auto-approval is on, with no rules.** Since 2026-10-13 every proposal is
+   approved on submission — the notice / weekend / same-day holds were removed
+   at Mr. Ko's request. Students can book dates unattended. `update settings
    set value = 'off' where key = 'auto_approve';` reverses it, no deploy.
 3. **Math has no materials.** `Practice Tests/<class>` folders exist and are
    empty; the one real practice test sits outside the shared tree. Math

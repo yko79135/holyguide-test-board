@@ -7,10 +7,9 @@ import { materialKind, findMaterial } from './_materials.js';
 /* ------------------------------------------------------------------ *
  * Approval, in one place.
  *
- * A proposal Mr. Ko would have approved anyway should not have to wait
- * for him to open the board. The rules below are the ones he stated;
- * anything a rule cannot vouch for stays pending and reaches him by
- * email exactly as it did before. There is deliberately no one-click
+ * A proposal should not have to wait for Mr. Ko to open the board:
+ * every one is approved on submission and he is emailed that it was.
+ * There is deliberately no one-click
  * approve/undo link in that email: such a link is an unauthenticated
  * mutation endpoint, and the board's whole auth model is the Google
  * token. Undoing is a reopen on the board, which is one tap on a phone.
@@ -30,45 +29,16 @@ export async function leadDays() {
   return Number.isFinite(n) && n >= 0 ? n : 7;
 }
 
-/* Whole days between two Seoul calendar dates. Both are 'YYYY-MM-DD'
-   strings already resolved in Asia/Seoul, so this is pure arithmetic
-   on the calendar and never touches a timezone again. */
-function dayNumber(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
-}
-
-function isWeekend(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return wd === 0 || wd === 6;
-}
-
 /* Returns the reasons this proposal must NOT be auto-approved.
-   Empty array => approve it. */
-export async function holdReasons(p, today, lead) {
-  const reasons = [];
+   Empty array => approve it.
 
-  const notice = dayNumber(p.test_date) - dayNumber(today);
-  if (notice < lead) {
-    reasons.push(
-      'only ' + notice + ' day' + (notice === 1 ? '' : 's') +
-      ' notice — the board asks for ' + lead
-    );
-  }
-
-  if (isWeekend(p.test_date)) reasons.push('the date falls on a weekend');
-
-  const clash = await sql`
-    select id from proposals
-     where student_id = ${p.student_id}
-       and test_date = ${p.test_date}
-       and status = 'approved'
-       and id <> ${p.id}
-     limit 1`;
-  if (clash.length) reasons.push('this student already has an approved test that day');
-
-  return reasons;
+   Mr. Ko's standing instruction (2026-10-13): approve every test request.
+   The earlier holds (short notice, a weekend date, a second approved test
+   the same day) are gone. The signature stays so the held-proposal email
+   in propose still works if a rule is ever brought back; the auto_approve
+   kill switch above is now the only way a proposal stays pending. */
+export async function holdReasons(_p, _today, _lead) {
+  return [];
 }
 
 /* The approve path, shared by the teacher's button and auto-approval.
@@ -145,7 +115,7 @@ export function autoApprovedEmail(row, eventId) {
     subject: row.student_name + '’s ' + row.subject + ' ' + row.chapter +
              ' test was approved automatically',
     lines: [
-      'The board approved this one for you — it met every rule.',
+      'The board approved this one for you automatically.',
       '',
       'Student: ' + row.student_name,
       'Subject: ' + row.subject + (row.course ? ' (' + row.course + ')' : ''),
