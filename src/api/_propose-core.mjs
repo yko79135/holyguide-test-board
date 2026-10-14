@@ -15,6 +15,7 @@ export function createHandler({
   authenticate, sql, loadBoard, send, fail, body, seoulToday, PERIODS, CONFIG,
   emailTeacher, whenLabel,
   autoApproveEnabled, leadDays, holdReasons, approveProposal, autoApprovedEmail,
+  noSchoolReason = () => null, sendEmail = async () => false,
   newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
 }) {
   return async function handler(req, res) {
@@ -85,6 +86,55 @@ export function createHandler({
         return send(res, 409, {
           error: 'You already have a ' + subject + ' ' + chapter + ' date on the board — ' +
                  dupe[0].test_date + '. Withdraw it first if you want a different day.',
+        });
+      }
+
+      /* No school that day: declined at once, never approved (Mr. Ko,
+         2026-10-14). The row is still written — as declined, with the
+         reason — so the board shows the student what happened, and since the
+         duplicate guard only counts pending and approved rows, he can pick
+         another day straight away. This holds even with auto_approve off. */
+      const noSchool = noSchoolReason(date);
+      if (noSchool) {
+        const id = newId();
+        const when = whenLabel({ test_date: date, test_period: period, test_time: time });
+        const reason = 'Declined automatically: there is no school on ' + date + ' — ' + noSchool +
+                       '. Please pick a school day.';
+        await sql`
+          insert into proposals (id, student_id, subject, course, chapter, test_date,
+                                 test_period, test_time, note, geometry_mode,
+                                 status, decided_at, teacher_note)
+          values (${id}, ${me.studentId}, ${subject}, ${course}, ${chapter}, ${date},
+                  ${period}, ${time || null}, ${note}, ${geometryMode},
+                  'declined', now(), ${reason})`;
+        try {
+          await sendEmail({
+            to: me.email,
+            cc: [CONFIG.notifyEmail],
+            subject: 'Your ' + subject + ' ' + chapter + ' test date was declined — no school that day',
+            lines: [
+              'Hi ' + me.studentName + ',',
+              '',
+              'The test date you picked was declined automatically, because there is no school on ' +
+                date + ' (' + noSchool + ').',
+              '',
+              'Subject: ' + subject + (course ? ' (' + course + ')' : ''),
+              'Chapter: ' + chapter,
+              'When you asked for: ' + when,
+              '',
+              'Please choose a school day and send it again: ' + CONFIG.appUrl,
+              '',
+              'Mr. Ko',
+            ],
+          });
+        } catch (err) {
+          console.error('[no-school] could not email ' + id + ':', err.message);
+        }
+        const board = await loadBoard();
+        return send(res, 200, {
+          me, today, autoApproved: false, autoDeclined: true,
+          message: 'There is no school on ' + date + ' (' + noSchool + '), so this date was declined. Pick a school day.',
+          ...board,
         });
       }
 

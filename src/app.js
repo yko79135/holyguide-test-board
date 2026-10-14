@@ -491,7 +491,7 @@
       }
       if(!payload.date) return toast("Pick a test date first.");
       if(draft.slot === "other" && !payload.time) return toast("Type the time, or pick a class period.");
-      return api("/api/propose", payload).then(function(d){ if(d){ draft = {}; toast("Sent to Mr. Ko."); } });
+      return api("/api/propose", payload).then(function(d){ if(d){ draft = {}; toast(d.autoDeclined ? d.message : "Sent to Mr. Ko."); } });
     }
     if(act === "withdraw") return api("/api/withdraw", {id:id}).then(function(d){ if(d) toast("Withdrawn."); });
     if(act === "approve" || act === "decline"){
