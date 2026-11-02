@@ -4,6 +4,7 @@ import { authenticate, sql, send, fail, CONFIG, seoulToday } from './_lib.js';
 import { sendEmail, whenLabel, emailConfigured, mailer, createCalendarEvent, calendarConfigured } from './_integrations.js';
 import { leadDays } from './_approve.js';
 import { materialKind, findMaterial, fetchMaterial, listChapterFiles, geometryModeLabel } from './_materials.js';
+import { sentElsewhere } from './_sent-elsewhere.js';
 
 /* ------------------------------------------------------------------ *
  * The morning run.
@@ -123,6 +124,27 @@ export default async function handler(req, res) {
 
     for (const row of rows) {
       const kind = materialKind(row.subject);
+
+      /* Ezra may already have emailed this test's material himself; his send
+         record is School Duty/sent.json, mirrored into _sent-elsewhere.json.
+         A test listed there is done: no second copy to the student, no
+         "nothing to send" mail to Mr. Ko, and the board shows it as sent. */
+      const elsewhere = sentElsewhere(row.id, kind);
+      if (elsewhere) {
+        if (!dryRun) {
+          const on = /^\d{4}-\d{2}-\d{2}/.test(elsewhere.at || '') ? elsewhere.at.slice(0, 10) : today;
+          await sql`
+            update proposals
+               set delivery_status = 'sent', claimed_at = null,
+                   sent_at = ${on}::date, last_check = ${today}::date
+             where id = ${row.id} and delivery_status <> 'sent'`;
+        }
+        out.skipped.push({
+          id: row.id, student: row.student_name,
+          reason: 'already sent by ' + (elsewhere.by || 'Ezra') + (elsewhere.at ? ' on ' + elsewhere.at.slice(0, 10) : ''),
+        });
+        continue;
+      }
       const course =
         row.course || (row.subject === 'Math' ? row.math_course : row.science_course);
       const wanted = kind + ' — ' + course + ' ' + row.chapter;
