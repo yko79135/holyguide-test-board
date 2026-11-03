@@ -9,27 +9,67 @@
  * propose.js is the thin wiring; everything that can be got wrong lives here.
  */
 
+import { timingSafeEqual, createHash } from 'node:crypto';
 import { isGeometry, geometryModeLabel, GEOMETRY_MODES } from './_materials.js';
+
+/* Ezra, Mr. Ko's school agent, books a test for a student (Mr. Ko,
+   2026-11-03: "윤찬이 시험 날짜를 그냥 너가 임의로 박아줘"). He has no Google
+   sign-in, so he proves himself with a random secret kept only on his
+   machine. The repo is public, so only its SHA-256 is stored here; the
+   secret itself never is. Rotate by replacing the hash. */
+const EZRA_BOOKING_SHA256 = 'ff337ff9c1fde9564167906a2a0f54c87aa9aba69fb9417ff17338d4d7a22a45';
+const sha = (s) => createHash('sha256').update(String(s)).digest();
+function bookingSecretOk(req, expectedHex) {
+  const supplied = String(req.headers?.['x-ezra-booking-secret'] || '');
+  if (supplied.length < 32 || !/^[0-9a-f]{64}$/.test(String(expectedHex || ''))) return false;
+  return timingSafeEqual(sha(supplied), Buffer.from(expectedHex, 'hex'));
+}
 
 export function createHandler({
   authenticate, sql, loadBoard, send, fail, body, seoulToday, PERIODS, CONFIG,
   emailTeacher, whenLabel,
   autoApproveEnabled, leadDays, holdReasons, approveProposal, autoApprovedEmail,
   noSchoolReason = () => null, sendEmail = async () => false,
+  bookingSecretHash = () => EZRA_BOOKING_SHA256,
   newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
 }) {
   return async function handler(req, res) {
     if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' });
     try {
-      const me = await authenticate(req);
-      if (me.role !== 'student') {
+      const b = body(req);
+      /* Who the test is for. A student books for himself. Mr. Ko (signed
+         in) or Ezra (booking secret) books for a named student on the
+         roster; the row is written exactly as if that student had asked,
+         so every later rule — duplicates, no-school, approval, delivery —
+         is the same. */
+      let me;
+      let caller = null;   // the teacher/Ezra who booked, returned instead of the student
+      const ezra = req.headers?.['x-ezra-booking-secret'] !== undefined;
+      if (ezra) {
+        if (!bookingSecretOk(req, bookingSecretHash())) {
+          return send(res, 401, { error: 'Booking secret refused.' });
+        }
+        me = { role: 'teacher', bookedBy: 'Ezra' };
+      } else {
+        me = await authenticate(req);
+        if (me.role === 'teacher') me = { ...me, bookedBy: 'Mr. Ko' };
+      }
+      if (me.role === 'teacher') {
+        const sid = String(b.studentId || '').trim();
+        if (!sid) return send(res, 400, { error: 'Say which student this test is for.' });
+        const st = await sql`select id, name, email from students where id = ${sid} limit 1`;
+        if (!st.length) return send(res, 404, { error: 'No student ' + sid + ' on the roster.' });
+        caller = me;
+        me = { role: 'student', studentId: st[0].id, studentName: st[0].name,
+               email: st[0].email, name: st[0].name, bookedBy: me.bookedBy };
+      } else if (me.role !== 'student') {
         return send(res, 403, { error: 'Only students propose test dates.' });
       }
-      const b = body(req);
       const subject = b.subject === 'Science' ? 'Science' : 'Math';
       const chapter = String(b.chapter || '').trim().slice(0, 40);
       const course = String(b.course || '').trim().slice(0, 120);
-      const note = String(b.note || '').trim().slice(0, 400);
+      const note = (me.bookedBy ? 'Booked by ' + me.bookedBy + '. ' : '') +
+                   String(b.note || '').trim().slice(0, 380);
       const date = String(b.date || '').trim();
       const today = seoulToday();
 
@@ -109,7 +149,7 @@ export function createHandler({
                   'declined', now(), ${reason})`;
         try {
           await sendEmail({
-            to: me.email,
+            to: me.email || CONFIG.notifyEmail,
             cc: [CONFIG.notifyEmail],
             subject: 'Your ' + subject + ' ' + chapter + ' test date was declined — no school that day',
             lines: [
@@ -132,7 +172,7 @@ export function createHandler({
         }
         const board = await loadBoard();
         return send(res, 200, {
-          me, today, autoApproved: false, autoDeclined: true,
+          me: caller || me, today, autoApproved: false, autoDeclined: true,
           message: 'There is no school on ' + date + ' (' + noSchool + '), so this date was declined. Pick a school day.',
           ...board,
         });
@@ -198,7 +238,7 @@ export function createHandler({
       }
 
       const board = await loadBoard();
-      send(res, 200, { me, today, autoApproved: approved, ...board });
+      send(res, 200, { me: caller || me, today, autoApproved: approved, ...board });
     } catch (err) {
       fail(res, err);
     }
