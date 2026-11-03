@@ -71,5 +71,11 @@ export default [
   "kind": "Study Guide",
   "at": "2026-11-03T01:50:16Z",
   "by": "Ezra"
+ },
+ {
+  "reservation": "ezra-yc-ps-ch02",
+  "kind": "Study Guide",
+  "at": "2026-11-03T05:04:27Z",
+  "by": "Ezra"
  }
 ];
