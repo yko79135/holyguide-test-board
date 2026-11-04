@@ -83,5 +83,11 @@ export default [
   "kind": "Practice Test",
   "at": "2026-11-03T05:05:27Z",
   "by": "Ezra"
+ },
+ {
+  "reservation": "pmw1iqu5f3ngi",
+  "kind": "Study Guide",
+  "at": "2026-11-04T03:25:03Z",
+  "by": "Ezra"
  }
 ];
