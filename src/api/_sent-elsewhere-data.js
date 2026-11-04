@@ -79,6 +79,12 @@ export default [
   "by": "Ezra"
  },
  {
+  "reservation": "pmw07yijebsn5",
+  "kind": "Study Guide",
+  "at": "2026-11-03T05:04:27Z",
+  "by": "Ezra"
+ },
+ {
   "reservation": "pmw077gwqpaul",
   "kind": "Practice Test",
   "at": "2026-11-03T05:05:27Z",
