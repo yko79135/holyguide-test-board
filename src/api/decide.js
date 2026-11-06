@@ -40,7 +40,9 @@ export default async function handler(req, res) {
         const match = PERIODS.find((x) => x.n === period);
         if (!match) return send(res, 400, { error: 'That is not one of the school periods.' });
         time = match.start;
-      } else if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      } else if (!time) {
+        return send(res, 400, { error: 'Pick the class period for the test.' });
+      } else if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
         return send(res, 400, { error: 'That time does not look right — use HH:MM.' });
       }
 

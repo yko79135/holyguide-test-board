@@ -93,7 +93,7 @@ export function createHandler({
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return send(res, 400, { error: 'Pick a test date.' });
       if (date <= today) return send(res, 400, { error: 'Pick a date in the future.' });
 
-      // Either a school period, or a free time, or neither. A period wins
+      // Either a school period or a free time — one is required. A period wins
       // and fixes the time, so the two can never disagree on the row.
       let period = b.period == null || b.period === '' ? null : Number(b.period);
       let time = String(b.time || '').trim();
@@ -106,7 +106,7 @@ export function createHandler({
           return send(res, 400, { error: 'That time does not look right — use HH:MM.' });
         }
       } else {
-        time = '';
+        return send(res, 400, { error: 'Pick the class period for the test.' });
       }
 
       /* One live date per chapter — but only a date that has not happened

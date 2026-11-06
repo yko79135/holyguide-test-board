@@ -67,7 +67,7 @@ async function run(date, { autoApprove = true } = {}) {
   });
   await handler({
     method: 'POST', headers: {},
-    body: JSON.stringify({ subject: 'Science', course: 'Life Science (5th ed.)', chapter: 'Ch 20', date }),
+    body: JSON.stringify({ subject: 'Science', course: 'Life Science (5th ed.)', chapter: 'Ch 20', date, period: 1 }),
   }, res);
   return { res, writes, teacherMail, studentMail, approved };
 }

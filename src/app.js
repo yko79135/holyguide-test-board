@@ -243,7 +243,7 @@
           : 'Study guide + practice test would reach you '+esc(fmtDate(addDays(draft.date,-lead())))+'.')+'</p>' : '')
       + '</div><div><label for="f-slot">Class period</label>'
       + '<select id="f-slot" data-field="slot">'
-      + '<option value=""'+(slot===""?' selected':'')+'>Not sure yet</option>'
+      + '<option value="" disabled'+(slot===""?' selected':'')+'>Choose a period</option>'
       + periods.map(function(x){
           return '<option value="'+x.n+'"'+(slot===String(x.n)?' selected':'')+'>'
             + x.n+'교시 · '+x.start+'–'+x.end+'</option>';
@@ -252,7 +252,7 @@
       + '</select>'
       + (slot==="other"
           ? '<input type="time" data-field="time" value="'+esc(draft.time||"")+'" style="margin-top:8px">'
-          : '<p class="hint">Mr. Ko puts approved tests straight onto his calendar, so a period helps.</p>')
+          : '<p class="hint">Required — Mr. Ko puts approved tests straight onto his calendar.</p>')
       + '</div></div>';
     h += '<div><label for="f-note">Anything Mr. Ko should know</label>'
       + '<input id="f-note" type="text" data-field="note" value="'+esc(draft.note||"")+'" placeholder="Optional"></div>';
@@ -288,7 +288,7 @@
       + (p.sent_at ? '<p class="hint">Materials already went out — they will not be sent again.</p>' : '')
       + '</div><div><label for="r-slot">Class period</label>'
       + '<select id="r-slot" data-field="r-slot">'
-      + '<option value=""'+(slot===""?' selected':'')+'>Not sure yet</option>'
+      + '<option value="" disabled'+(slot===""?' selected':'')+'>Choose a period</option>'
       + periods.map(function(x){
           return '<option value="'+x.n+'"'+(slot===String(x.n)?' selected':'')+'>'
             + x.n+'교시 · '+x.start+'–'+x.end+'</option>';
@@ -490,6 +490,7 @@
         return toast("Choose the BJU chapter test or six demonstrated proofs.");
       }
       if(!payload.date) return toast("Pick a test date first.");
+      if(!draft.slot) return toast("Pick the class period for the test.");
       if(draft.slot === "other" && !payload.time) return toast("Type the time, or pick a class period.");
       return api("/api/propose", payload).then(function(d){ if(d){ draft = {}; toast(d.autoDeclined ? d.message : "Sent to Mr. Ko."); } });
     }
@@ -514,6 +515,7 @@
         time: resched.slot === "other" ? (resched.time || val("r-time")) : ""
       };
       if(!rb.date) return toast("Pick the new test date.");
+      if(!resched.slot) return toast("Pick the class period for the test.");
       if(resched.slot === "other" && !rb.time) return toast("Type the time, or pick a class period.");
       return api("/api/decide", rb).then(function(d){
         if(d){ resched = null; toast("Rescheduled to "+fmtLong(rb.date)+"."); }

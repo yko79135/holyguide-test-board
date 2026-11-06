@@ -78,7 +78,7 @@ async function run(payload) {
   return { res, writes, mail };
 }
 
-const base = { subject: 'Math', chapter: 'Ch 1', date: '2026-11-01' };
+const base = { subject: 'Math', chapter: 'Ch 1', date: '2026-11-01', period: 1 };
 const GEO = 'Geometry (4th ed.)';
 
 // A Geometry proposal with no format is refused, and nothing is written.
@@ -130,7 +130,7 @@ for (const mode of GEOMETRY_MODES) {
 // Science is untouched by all of this.
 {
   const { res, writes } = await run({
-    subject: 'Science', course: 'Earth Science (5th ed.)', chapter: 'Ch 3', date: '2026-11-01',
+    subject: 'Science', course: 'Earth Science (5th ed.)', chapter: 'Ch 3', date: '2026-11-01', period: 1,
   });
   assert.equal(res.code, 200);
   assert.ok(writes[0].values.includes(null));
@@ -146,6 +146,12 @@ for (const mode of GEOMETRY_MODES) {
   const { res } = await run({ ...base, course: GEO, geometryMode: 'bju', period: 99 });
   assert.equal(res.code, 400);
   assert.match(res.body.error, /school periods/i);
+}
+// A class period (or a typed time) is required — no untimed tests.
+{
+  const { res } = await run({ ...base, course: GEO, geometryMode: 'bju', period: null });
+  assert.equal(res.code, 400);
+  assert.match(res.body.error, /class period/i);
 }
 
 console.log('geometry-mode: all assertions passed');
