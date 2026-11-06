@@ -22,7 +22,7 @@ const BOARD = {
   proposals: [],
   lastRun: null,
 };
-const CFG = { configured: true, googleClientId: 'x', periods: [{ n: 1, start: '09:00', end: '09:40' }] };
+const CFG = { configured: true, googleClientId: 'x', periods: [{ n: 3, start: '10:30', end: '11:10' }, { n: 4, start: '11:15', end: '11:55' }] };
 
 let lastPropose = null;
 
@@ -148,6 +148,8 @@ await evaluate(`(function(){
   document.querySelector('[data-field="chapter"]').dispatchEvent(new Event('input',{bubbles:true}));
   document.querySelector('[data-field="date"]').value = '2026-11-01';
   document.querySelector('[data-field="date"]').dispatchEvent(new Event('input',{bubbles:true}));
+  document.querySelector('[data-field="slot"]').value = '3-4';
+  document.querySelector('[data-field="slot"]').dispatchEvent(new Event('input',{bubbles:true}));
   document.querySelector('[data-act="propose"]').click();
   return true;
 })()`);
@@ -167,6 +169,8 @@ await evaluate(`document.querySelector('[data-act="propose"]').click()`);
 await new Promise((r) => setTimeout(r, 500));
 assert.ok(lastPropose, 'the proposal should have been sent');
 assert.equal(lastPropose.geometryMode, 'proofs');
+assert.equal(lastPropose.period, 3);
+assert.equal(lastPropose.periodEnd, 4);
 assert.equal(lastPropose.course, 'Geometry (4th ed.)');
 
 // Switching to Science hides the field entirely.

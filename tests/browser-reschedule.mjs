@@ -172,7 +172,7 @@ await evaluate(`document.querySelector('[data-act="resched-save"][data-id="p-fut
 await new Promise((r) => setTimeout(r, 600));
 assert.ok(lastDecide, 'the click should have reached /api/decide');
 results.sent = lastDecide;
-assert.deepEqual(lastDecide, { id: 'p-future', decision: 'reschedule', date: '2026-10-08', period: 3, time: '' });
+assert.deepEqual(lastDecide, { id: 'p-future', decision: 'reschedule', date: '2026-10-08', period: 3, periodEnd: null, time: '' });
 
 /* 4. Editor closes and the row still reads Approved, on the new date. */
 results.editorGone = await evaluate(`!document.querySelector('.resched')`);

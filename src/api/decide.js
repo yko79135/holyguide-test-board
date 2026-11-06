@@ -1,4 +1,5 @@
 import { authenticate, sql, loadBoard, send, fail, body, seoulToday, PERIODS } from './_lib.js';
+import { readSlot } from './_slots.js';
 import { createCalendarEvent, deleteCalendarEvent } from './_integrations.js';
 import { approveProposal } from './_approve.js';
 
@@ -33,18 +34,10 @@ export default async function handler(req, res) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return send(res, 400, { error: 'Pick the new test date.' });
       if (date < seoulToday()) return send(res, 400, { error: 'The new date is already in the past.' });
 
-      // Same rule as propose: a period wins and fixes the time.
-      const period = b.period == null || b.period === '' ? null : Number(b.period);
-      let time = String(b.time || '').trim();
-      if (period !== null) {
-        const match = PERIODS.find((x) => x.n === period);
-        if (!match) return send(res, 400, { error: 'That is not one of the school periods.' });
-        time = match.start;
-      } else if (!time) {
-        return send(res, 400, { error: 'Pick the class period for the test.' });
-      } else if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-        return send(res, 400, { error: 'That time does not look right — use HH:MM.' });
-      }
+      // Same rule as propose: a period (or a back-to-back pair) is required.
+      const slot = readSlot(b, PERIODS);
+      if (slot.error) return send(res, 400, { error: slot.error });
+      const { period, periodEnd, time } = slot;
 
       /* Materials already sent stay sent — the student has them, and a
          new date is no reason to mail them twice. Anything not yet sent
@@ -53,7 +46,8 @@ export default async function handler(req, res) {
          Mr. Ko is not suppressed for the day. */
       await sql`
         update proposals
-           set test_date = ${date}::date, test_period = ${period}, test_time = ${time || null},
+           set test_date = ${date}::date, test_period = ${period}, test_period_end = ${periodEnd},
+               test_time = ${time || null},
                delivery_status = case when delivery_status = 'sent' then 'sent' else 'scheduled' end,
                last_check = case when delivery_status = 'sent' then last_check else null end,
                teacher_note = case when ${teacherNote} = '' then teacher_note else ${teacherNote} end
@@ -67,7 +61,7 @@ export default async function handler(req, res) {
       const fresh = await sql`
         select p.id, p.subject, p.course, p.chapter, p.note, p.teacher_note,
                to_char(p.test_date,'YYYY-MM-DD') as test_date,
-               p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
+               p.test_period, p.test_period_end, to_char(p.test_time,'HH24:MI') as test_time,
                s.name as student_name
           from proposals p join students s on s.id = p.student_id
          where p.id = ${id} limit 1`;

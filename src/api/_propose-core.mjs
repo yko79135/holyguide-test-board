@@ -11,6 +11,7 @@
 
 import { timingSafeEqual, createHash } from 'node:crypto';
 import { isGeometry, geometryModeLabel, GEOMETRY_MODES } from './_materials.js';
+import { readSlot } from './_slots.js';
 
 /* Ezra, Mr. Ko's school agent, books a test for a student (Mr. Ko,
    2026-11-03: "윤찬이 시험 날짜를 그냥 너가 임의로 박아줘"). He has no Google
@@ -93,21 +94,11 @@ export function createHandler({
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return send(res, 400, { error: 'Pick a test date.' });
       if (date <= today) return send(res, 400, { error: 'Pick a date in the future.' });
 
-      // Either a school period or a free time — one is required. A period wins
-      // and fixes the time, so the two can never disagree on the row.
-      let period = b.period == null || b.period === '' ? null : Number(b.period);
-      let time = String(b.time || '').trim();
-      if (period !== null) {
-        const match = PERIODS.find((x) => x.n === period);
-        if (!match) return send(res, 400, { error: 'That is not one of the school periods.' });
-        time = match.start;
-      } else if (time) {
-        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-          return send(res, 400, { error: 'That time does not look right — use HH:MM.' });
-        }
-      } else {
-        return send(res, 400, { error: 'Pick the class period for the test.' });
-      }
+      // A period (or a pair of back-to-back periods), or a typed time.
+      // A period wins and fixes the time, so the two can never disagree.
+      const slot = readSlot(b, PERIODS);
+      if (slot.error) return send(res, 400, { error: slot.error });
+      const { period, periodEnd, time } = slot;
 
       /* One live date per chapter — but only a date that has not happened
          yet. A test that was missed (illness, a closure, a clash) leaves an
@@ -137,15 +128,15 @@ export function createHandler({
       const noSchool = noSchoolReason(date);
       if (noSchool) {
         const id = newId();
-        const when = whenLabel({ test_date: date, test_period: period, test_time: time });
+        const when = whenLabel({ test_date: date, test_period: period, test_period_end: periodEnd, test_time: time });
         const reason = 'Declined automatically: there is no school on ' + date + ' — ' + noSchool +
                        '. Please pick a school day.';
         await sql`
           insert into proposals (id, student_id, subject, course, chapter, test_date,
-                                 test_period, test_time, note, geometry_mode,
+                                 test_period, test_period_end, test_time, note, geometry_mode,
                                  status, decided_at, teacher_note)
           values (${id}, ${me.studentId}, ${subject}, ${course}, ${chapter}, ${date},
-                  ${period}, ${time || null}, ${note}, ${geometryMode},
+                  ${period}, ${periodEnd}, ${time || null}, ${note}, ${geometryMode},
                   'declined', now(), ${reason})`;
         try {
           await sendEmail({
@@ -181,9 +172,9 @@ export function createHandler({
       const id = newId();
       await sql`
         insert into proposals (id, student_id, subject, course, chapter, test_date,
-                               test_period, test_time, note, geometry_mode)
+                               test_period, test_period_end, test_time, note, geometry_mode)
         values (${id}, ${me.studentId}, ${subject}, ${course}, ${chapter}, ${date},
-                ${period}, ${time || null}, ${note}, ${geometryMode})`;
+                ${period}, ${periodEnd}, ${time || null}, ${note}, ${geometryMode})`;
 
       /* Auto-approval. The row is already in Postgres and is the source of
          truth; everything below is best-effort on top of it, so a failure
@@ -210,7 +201,7 @@ export function createHandler({
                 'Subject: ' + subject + (course ? ' (' + course + ')' : ''),
                 'Chapter: ' + chapter,
                 geometryMode ? 'Format: ' + geometryModeLabel(geometryMode) : '',
-                'When: ' + whenLabel({ test_date: date, test_period: period, test_time: time }),
+                'When: ' + whenLabel({ test_date: date, test_period: period, test_period_end: periodEnd, test_time: time }),
                 note ? 'Their note: ' + note : '',
                 '',
                 'Approve or decline: ' + CONFIG.appUrl,
@@ -226,7 +217,7 @@ export function createHandler({
               'Subject: ' + subject + (course ? ' (' + course + ')' : ''),
               'Chapter: ' + chapter,
               geometryMode ? 'Format: ' + geometryModeLabel(geometryMode) : '',
-              'When: ' + whenLabel({ test_date: date, test_period: period, test_time: time }),
+              'When: ' + whenLabel({ test_date: date, test_period: period, test_period_end: periodEnd, test_time: time }),
               note ? 'Their note: ' + note : '',
               '',
               'Approve or decline: ' + CONFIG.appUrl,

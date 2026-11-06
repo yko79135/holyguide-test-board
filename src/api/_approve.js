@@ -54,7 +54,7 @@ export async function approveProposal(id, existingEventId, teacherNote = '') {
   const fresh = await sql`
     select p.id, p.student_id, p.subject, p.course, p.chapter, p.note, p.teacher_note, p.created_at,
            to_char(p.test_date,'YYYY-MM-DD') as test_date,
-           p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
+           p.test_period, p.test_period_end, to_char(p.test_time,'HH24:MI') as test_time,
            s.name as student_name, s.math_course, s.science_course
       from proposals p join students s on s.id = p.student_id
      where p.id = ${id} limit 1`;

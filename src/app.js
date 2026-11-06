@@ -38,8 +38,39 @@
     for(var i=0;i<list.length;i++){ if(list[i].n === n) return list[i]; }
     return null;
   }
+  /* One period, or two back to back (never across lunch, which sits
+     after 4교시). Slot values: "3", "3-4", "other". Same rule as the
+     server's _slots.js. */
+  var LUNCH_AFTER = 4;
+  function slotList(){
+    var list = (cfg && cfg.periods) || [], out = [];
+    list.forEach(function(x){
+      out.push({v:String(x.n), label:x.n+"교시 · "+x.start+"–"+x.end});
+      var nx = periodByN(x.n+1);
+      if(nx && x.n !== LUNCH_AFTER) out.push({v:x.n+"-"+nx.n, label:x.n+"–"+nx.n+"교시 · "+x.start+"–"+nx.end+" (two periods)"});
+    });
+    return out;
+  }
+  function slotOptions(slot){
+    return '<option value="" disabled'+(slot===""?' selected':'')+'>Choose a period</option>'
+      + slotList().map(function(o){
+          return '<option value="'+o.v+'"'+(slot===o.v?' selected':'')+'>'+esc(o.label)+'</option>';
+        }).join("")
+      + '<option value="other"'+(slot==="other"?' selected':'')+'>Other time…</option>';
+  }
+  function slotParts(slot){
+    if(!slot || slot === "other") return {period:null, periodEnd:null};
+    var m = String(slot).split("-");
+    return {period:Number(m[0]), periodEnd: m[1] ? Number(m[1]) : null};
+  }
+  function slotOf(p){
+    if(p.test_period != null) return p.test_period_end != null ? p.test_period+"-"+p.test_period_end : String(p.test_period);
+    return p.test_time ? "other" : "";
+  }
   function whenText(p){
     var per = periodByN(p.test_period);
+    var last = p.test_period_end != null ? periodByN(p.test_period_end) : null;
+    if(per && last) return per.n+"–"+last.n+"교시 · "+per.start+"–"+last.end;
     if(per) return per.n+"교시 · "+per.start+"–"+per.end;
     if(p.test_time) return p.test_time;
     return "";
@@ -243,12 +274,7 @@
           : 'Study guide + practice test would reach you '+esc(fmtDate(addDays(draft.date,-lead())))+'.')+'</p>' : '')
       + '</div><div><label for="f-slot">Class period</label>'
       + '<select id="f-slot" data-field="slot">'
-      + '<option value="" disabled'+(slot===""?' selected':'')+'>Choose a period</option>'
-      + periods.map(function(x){
-          return '<option value="'+x.n+'"'+(slot===String(x.n)?' selected':'')+'>'
-            + x.n+'교시 · '+x.start+'–'+x.end+'</option>';
-        }).join("")
-      + '<option value="other"'+(slot==="other"?' selected':'')+'>Other time…</option>'
+      + slotOptions(slot)
       + '</select>'
       + (slot==="other"
           ? '<input type="time" data-field="time" value="'+esc(draft.time||"")+'" style="margin-top:8px">'
@@ -288,12 +314,7 @@
       + (p.sent_at ? '<p class="hint">Materials already went out — they will not be sent again.</p>' : '')
       + '</div><div><label for="r-slot">Class period</label>'
       + '<select id="r-slot" data-field="r-slot">'
-      + '<option value="" disabled'+(slot===""?' selected':'')+'>Choose a period</option>'
-      + periods.map(function(x){
-          return '<option value="'+x.n+'"'+(slot===String(x.n)?' selected':'')+'>'
-            + x.n+'교시 · '+x.start+'–'+x.end+'</option>';
-        }).join("")
-      + '<option value="other"'+(slot==="other"?' selected':'')+'>Other time…</option>'
+      + slotOptions(slot)
       + '</select>'
       + (slot==="other" ? '<input type="time" data-field="r-time" value="'+esc(r.time||"")+'" style="margin-top:8px">' : '')
       + '</div></div>'
@@ -481,7 +502,8 @@
         chapter: draft.chapter != null ? draft.chapter : val("chapter"),
         date: draft.date || val("date"),
         note: draft.note != null ? draft.note : val("note"),
-        period: (draft.slot && draft.slot !== "other") ? Number(draft.slot) : null,
+        period: slotParts(draft.slot).period,
+        periodEnd: slotParts(draft.slot).periodEnd,
         time: draft.slot === "other" ? (draft.time || val("time")) : "",
         geometryMode: draft.geometryMode || null
       };
@@ -503,7 +525,7 @@
       var rp = data.proposals.filter(function(x){ return x.id === id; })[0];
       if(!rp) return;
       resched = { id:id, date: rp.test_date >= today() ? rp.test_date : "",
-                  slot: rp.test_period != null ? String(rp.test_period) : (rp.test_time ? "other" : ""),
+                  slot: slotOf(rp),
                   time: rp.test_period != null ? "" : (rp.test_time || "") };
       return render();
     }
@@ -511,7 +533,8 @@
     if(act === "resched-save"){
       var rb = {
         id:id, decision:"reschedule", date: resched.date || val("r-date"),
-        period: (resched.slot && resched.slot !== "other") ? Number(resched.slot) : null,
+        period: slotParts(resched.slot).period,
+        periodEnd: slotParts(resched.slot).periodEnd,
         time: resched.slot === "other" ? (resched.time || val("r-time")) : ""
       };
       if(!rb.date) return toast("Pick the new test date.");

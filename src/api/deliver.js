@@ -84,7 +84,7 @@ export default async function handler(req, res) {
     const rows = await sql`
       select p.id, p.subject, p.course, p.chapter, p.geometry_mode,
              to_char(p.test_date,'YYYY-MM-DD') as test_date,
-             p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
+             p.test_period, p.test_period_end, to_char(p.test_time,'HH24:MI') as test_time,
              to_char(p.last_check,'YYYY-MM-DD') as last_check,
              p.delivery_status,
              s.name as student_name, s.email as student_email,
@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       const bare = await sql`
         select p.id, p.subject, p.course, p.chapter, p.note, p.teacher_note,
                to_char(p.test_date,'YYYY-MM-DD') as test_date,
-               p.test_period, to_char(p.test_time,'HH24:MI') as test_time,
+               p.test_period, p.test_period_end, to_char(p.test_time,'HH24:MI') as test_time,
                s.name as student_name
           from proposals p join students s on s.id = p.student_id
          where p.status = 'approved' and p.calendar_event_id is null

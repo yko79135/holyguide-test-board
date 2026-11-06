@@ -208,7 +208,7 @@ export async function loadBoard() {
   const proposals = await sql`
     select id, student_id, subject, course, chapter, geometry_mode,
            to_char(test_date,'YYYY-MM-DD') as test_date,
-           test_period, to_char(test_time,'HH24:MI') as test_time, calendar_event_id,
+           test_period, test_period_end, to_char(test_time,'HH24:MI') as test_time, calendar_event_id,
            note, status, teacher_note,
            created_at, decided_at, delivery_status,
            to_char(sent_at,'YYYY-MM-DD') as sent_at, files,

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { CONFIG, PERIODS } from './_lib.js';
+import { periodSpan } from './_slots.js';
 
 /* ------------------------------------------------------------------ *
  * Both integrations are best-effort. A calendar or email failure must
@@ -71,11 +72,11 @@ function nextDay(iso) {
 /* An untimed proposal becomes an all-day event rather than a fake 9am
    one, so the calendar tells the truth about what is actually known. */
 function eventTimes(p) {
-  const period = PERIODS.find((x) => x.n === p.test_period);
-  if (period) {
+  const span = periodSpan(p, PERIODS);
+  if (span) {
     return {
-      start: { dateTime: p.test_date + 'T' + period.start + ':00', timeZone: CONFIG.timeZone },
-      end: { dateTime: p.test_date + 'T' + period.end + ':00', timeZone: CONFIG.timeZone },
+      start: { dateTime: p.test_date + 'T' + span.start + ':00', timeZone: CONFIG.timeZone },
+      end: { dateTime: p.test_date + 'T' + span.end + ':00', timeZone: CONFIG.timeZone },
     };
   }
   if (p.test_time) {
@@ -88,8 +89,8 @@ function eventTimes(p) {
 }
 
 export function whenLabel(p) {
-  const period = PERIODS.find((x) => x.n === p.test_period);
-  if (period) return p.test_date + ' · ' + period.n + '교시 (' + period.start + '–' + period.end + ')';
+  const span = periodSpan(p, PERIODS);
+  if (span) return p.test_date + ' · ' + span.label + ' (' + span.start + '–' + span.end + ')';
   if (p.test_time) return p.test_date + ' · ' + p.test_time;
   return p.test_date + ' · time not set';
 }
