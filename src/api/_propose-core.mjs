@@ -18,9 +18,9 @@ import { readSlot } from './_slots.js';
    sign-in, so he proves himself with a random secret kept only on his
    machine. The repo is public, so only its SHA-256 is stored here; the
    secret itself never is. Rotate by replacing the hash. */
-const EZRA_BOOKING_SHA256 = 'ff337ff9c1fde9564167906a2a0f54c87aa9aba69fb9417ff17338d4d7a22a45';
+export const EZRA_BOOKING_SHA256 = 'ff337ff9c1fde9564167906a2a0f54c87aa9aba69fb9417ff17338d4d7a22a45';
 const sha = (s) => createHash('sha256').update(String(s)).digest();
-function bookingSecretOk(req, expectedHex) {
+export function bookingSecretOk(req, expectedHex = EZRA_BOOKING_SHA256) {
   const supplied = String(req.headers?.['x-ezra-booking-secret'] || '');
   if (supplied.length < 32 || !/^[0-9a-f]{64}$/.test(String(expectedHex || ''))) return false;
   return timingSafeEqual(sha(supplied), Buffer.from(expectedHex, 'hex'));

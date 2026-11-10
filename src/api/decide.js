@@ -2,16 +2,28 @@ import { authenticate, sql, loadBoard, send, fail, body, seoulToday, PERIODS } f
 import { readSlot } from './_slots.js';
 import { createCalendarEvent, deleteCalendarEvent } from './_integrations.js';
 import { approveProposal } from './_approve.js';
+import { bookingSecretOk } from './_propose-core.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' });
   try {
-    const me = await authenticate(req);
-    if (me.role !== 'teacher') return send(res, 403, { error: 'Only Mr. Ko can approve test dates.' });
-
     const b = body(req);
     const id = String(b.id || '');
     const decision = String(b.decision || '');
+
+    /* Ezra may move a test Mr. Ko names (HANDS.md trove-board-reschedule,
+       2026-11-10: "reschedule it to tomorow first period"). He proves himself
+       with the same booking secret as propose, and may only reschedule —
+       never approve, decline or reopen. */
+    let me;
+    if (req.headers?.['x-ezra-booking-secret'] !== undefined) {
+      if (!bookingSecretOk(req)) return send(res, 401, { error: 'Booking secret refused.' });
+      if (decision !== 'reschedule') return send(res, 403, { error: 'Ezra may only reschedule.' });
+      me = { role: 'teacher', bookedBy: 'Ezra' };
+    } else {
+      me = await authenticate(req);
+    }
+    if (me.role !== 'teacher') return send(res, 403, { error: 'Only Mr. Ko can approve test dates.' });
     const teacherNote = String(b.teacherNote || '').trim().slice(0, 400);
 
     if (!['approve', 'decline', 'reopen', 'reschedule'].includes(decision)) {
