@@ -180,7 +180,7 @@ export function createHandler({
         } catch (err) {
           console.error('[no-school] could not email ' + id + ':', err.message);
         }
-        const board = await loadBoard();
+        const board = await loadBoard(caller || me);
         return send(res, 200, {
           me: caller || me, today, autoApproved: false, autoDeclined: true,
           message: 'There is no school on ' + date + ' (' + noSchool + '), so this date was declined. Pick a school day.',
@@ -247,7 +247,7 @@ export function createHandler({
         console.error('[auto-approve] ' + id + ':', err.message);
       }
 
-      const board = await loadBoard();
+      const board = await loadBoard(caller || me);
       send(res, 200, { me: caller || me, today, autoApproved: approved, ...board });
     } catch (err) {
       fail(res, err);

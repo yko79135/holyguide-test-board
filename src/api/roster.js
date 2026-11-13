@@ -33,7 +33,7 @@ export default async function handler(req, res) {
           science_course = ${science}
       where id = ${id}`;
 
-    const board = await loadBoard();
+    const board = await loadBoard(me);
     send(res, 200, { me, today: seoulToday(), ...board });
   } catch (err) {
     fail(res, err);

@@ -1,3 +1,4 @@
+import { boardFor } from './_privacy.js';
 import pg from 'pg';
 
 /* A service-account PEM reaches this process through a form field, and
@@ -201,7 +202,7 @@ export async function authenticate(req) {
   return { role: 'student', email, name, studentId: rows[0].id, studentName: rows[0].name };
 }
 
-export async function loadBoard() {
+export async function loadBoard(viewer) {
   const students = await sql`
     select id, name, full_name, grade, email, email_confirmed, math_course, science_course
     from students order by sort_order, name`;
@@ -236,7 +237,7 @@ export async function loadBoard() {
 
   const settings = await sql`select key, value from settings`;
   const s = Object.fromEntries(settings.map((r) => [r.key, r.value]));
-  return { students, proposals, leadDays: Number(s.lead_days || 7), lastRun: runs[0] || null };
+  return boardFor({ students, proposals, leadDays: Number(s.lead_days || 7), lastRun: runs[0] || null }, viewer);
 }
 
 export function fail(res, err) {
