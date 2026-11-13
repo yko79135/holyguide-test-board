@@ -12,6 +12,7 @@
 import { timingSafeEqual, createHash } from 'node:crypto';
 import { isGeometry, geometryModeLabel, GEOMETRY_MODES } from './_materials.js';
 import { readSlot } from './_slots.js';
+import { musicalClash } from './_musical.js';
 
 /* Ezra, Mr. Ko's school agent, books a test for a student (Mr. Ko,
    2026-11-03: "윤찬이 시험 날짜를 그냥 너가 임의로 박아줘"). He has no Google
@@ -32,6 +33,7 @@ export function createHandler({
   autoApproveEnabled, leadDays, holdReasons, approveProposal, autoApprovedEmail,
   noSchoolReason = () => null, sendEmail = async () => false,
   bookingSecretHash = () => EZRA_BOOKING_SHA256,
+  musicalClash: clashFn = musicalClash,
   newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
 }) {
   return async function handler(req, res) {
@@ -99,6 +101,23 @@ export function createHandler({
       const slot = readSlot(b, PERIODS);
       if (slot.error) return send(res, 400, { error: slot.error });
       const { period, periodEnd, time } = slot;
+
+      /* Musical rehearsal at that time for this student's grade (Mr. Ko,
+         2026-11-13: "block students from booking slots that you know a
+         musical practice is scheduled for that student"). Refused outright —
+         nothing is written — so the student just picks another slot. Mr. Ko
+         signed in himself may still book it; Ezra may not. */
+      if (me.bookedBy !== 'Mr. Ko') {
+        const g = await sql`select grade from students where id = ${me.studentId} limit 1`;
+        const clash = clashFn(date, { period, periodEnd, time }, g[0]?.grade, PERIODS);
+        if (clash) {
+          return send(res, 409, {
+            error: 'You have musical practice then (' + date + ', ' + clash.s + '–' + clash.e +
+                   '). Pick a different period or day.',
+            musical: clash,
+          });
+        }
+      }
 
       /* One live date per chapter — but only a date that has not happened
          yet. A test that was missed (illness, a closure, a clash) leaves an

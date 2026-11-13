@@ -3,6 +3,7 @@ import { readSlot } from './_slots.js';
 import { createCalendarEvent, deleteCalendarEvent } from './_integrations.js';
 import { approveProposal } from './_approve.js';
 import { bookingSecretOk } from './_propose-core.mjs';
+import { musicalClash } from './_musical.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' });
@@ -50,6 +51,16 @@ export default async function handler(req, res) {
       const slot = readSlot(b, PERIODS);
       if (slot.error) return send(res, 400, { error: slot.error });
       const { period, periodEnd, time } = slot;
+
+      /* Ezra never moves a test into the student's musical rehearsal
+         (Mr. Ko, 2026-11-13). Mr. Ko himself still may. */
+      if (me.bookedBy === 'Ezra') {
+        const g = await sql`select s.grade from proposals p join students s on s.id = p.student_id where p.id = ${id} limit 1`;
+        const clash = musicalClash(date, { period, periodEnd, time }, g[0]?.grade, PERIODS);
+        if (clash) {
+          return send(res, 409, { error: 'Musical practice then (' + date + ', ' + clash.s + '–' + clash.e + ').', musical: clash });
+        }
+      }
 
       /* Materials already sent stay sent — the student has them, and a
          new date is no reason to mail them twice. Anything not yet sent

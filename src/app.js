@@ -51,12 +51,28 @@
     });
     return out;
   }
-  function slotOptions(slot){
+  function slotOptions(slot, date, grade){
     return '<option value="" disabled'+(slot===""?' selected':'')+'>Choose a period</option>'
       + slotList().map(function(o){
-          return '<option value="'+o.v+'"'+(slot===o.v?' selected':'')+'>'+esc(o.label)+'</option>';
+          var busyMus = musicalAt(date, o.v, grade);
+          return '<option value="'+o.v+'"'+(slot===o.v?' selected':'')+(busyMus?' disabled':'')+'>'+esc(o.label)+(busyMus?' — musical practice':'')+'</option>';
         }).join("")
       + '<option value="other"'+(slot==="other"?' selected':'')+'>Other time…</option>';
+  }
+  /* Musical rehearsals for this student's grade (Mr. Ko, 2026-11-13). Same
+     rule as the server's _musical.js: 10+ minutes of overlap blocks a slot. */
+  function toMin(t){ var a=String(t).split(":"); return Number(a[0])*60+Number(a[1]); }
+  function musicalAt(date, slot, grade){
+    var m = String(grade||"").match(/(\d{1,2})/), list = (cfg && cfg.musical) || [];
+    if(!date || !m || !slot || slot==="other") return null;
+    var g = Number(m[1]), p = slotParts(slot), a = periodByN(p.period), b = p.periodEnd != null ? periodByN(p.periodEnd) : a;
+    if(!a || !b) return null;
+    var s = toMin(a.start), e = toMin(b.end);
+    for(var i=0;i<list.length;i++){
+      var r = list[i];
+      if(r.d===date && r.g.indexOf(g)>=0 && Math.min(e,toMin(r.e))-Math.max(s,toMin(r.s))>=10) return r;
+    }
+    return null;
   }
   function slotParts(slot){
     if(!slot || slot === "other") return {period:null, periodEnd:null};
@@ -274,8 +290,10 @@
           : 'Study guide + practice test would reach you '+esc(fmtDate(addDays(draft.date,-lead())))+'.')+'</p>' : '')
       + '</div><div><label for="f-slot">Class period</label>'
       + '<select id="f-slot" data-field="slot">'
-      + slotOptions(slot)
+      + slotOptions(slot, draft.date, studentById(data.me.studentId).grade)
       + '</select>'
+      + (musicalAt(draft.date, slot, studentById(data.me.studentId).grade)
+          ? '<p class="hint warnish">You have musical practice then — pick another period.</p>' : '')
       + (slot==="other"
           ? '<input type="time" data-field="time" value="'+esc(draft.time||"")+'" style="margin-top:8px">'
           : '<p class="hint">Required — Mr. Ko puts approved tests straight onto his calendar.</p>')
