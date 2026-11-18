@@ -233,5 +233,11 @@ export default [
   "kind": "Study Guide",
   "at": "2026-11-15T15:05:08Z",
   "by": "Ezra"
+ },
+ {
+  "reservation": "pmw07ywvgyis5",
+  "kind": "Study Guide",
+  "at": "2026-11-18T15:03:43Z",
+  "by": "Ezra"
  }
 ];
